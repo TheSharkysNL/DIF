@@ -14,7 +14,7 @@ pub use std::sync::{Mutex as LockOrCell, MutexGuard as Guard};
 
 #[cfg(not(feature = "multithreaded"))]
 pub use std::cell::{RefCell as LockOrCell, Ref as Guard, RefMut as GuardMut};
-
+use crate::cell::InstanceCell;
 
 pub struct InjectorLock<T : ?Sized> {
     pub(crate) value: Arc<LockOrCell<T>>,
@@ -86,5 +86,43 @@ impl<'a, T : 'static + ?Sized> Deref for InjectorLockGuardMut<'a, T> {
 impl<'a, T : 'static + ?Sized> DerefMut for InjectorLockGuardMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.guard.deref_mut()
+    }
+}
+
+pub struct InstanceCellLock {
+    pub(crate) value: InstanceCell,
+}
+
+impl InstanceCellLock {
+    /// Will return an error if the mutex has been poisoned.
+    #[cfg(feature = "async")]
+    pub fn lock<T : ?Sized + 'static, F : FnOnce(&mut T) -> O, O>(&self, fun: F) -> O {
+        let value = self.value.get::<T>();
+        let mut guard = value.lock().await;
+        fun(guard.deref_mut())
+    }
+
+    /// Will return an error if the mutex has been poisoned.
+    #[cfg(all(feature = "multithreaded", not(feature = "async")))]
+    pub fn lock<T : ?Sized + 'static, F : FnOnce(&mut T) -> O, O>(&self, fun: F) -> std::result::Result<O, String> {
+        let value = self.value.get::<T>();
+        match value.lock() {
+            Ok(mut guard) => Ok(fun(guard.deref_mut())),
+            Err(err) => Err(format!("Error, mutex has been poisoned. {}", err)),
+        }
+    }
+
+    #[cfg(not(feature = "multithreaded"))]
+    pub fn borrow<T : ?Sized + 'static, F : FnOnce(&T) -> O, O>(&self, fun: F) -> O {
+        let value = self.value.get::<T>();
+        let borrow = value.borrow();
+        fun(borrow.deref())
+    }
+
+    #[cfg(not(feature = "multithreaded"))]
+    pub fn borrow_mut<T : ?Sized + 'static, F : FnOnce(&mut T) -> O, O>(&self, fun: F) -> O {
+        let value = self.value.get::<T>();
+        let mut borrow = value.borrow_mut();
+        fun(borrow.deref_mut())
     }
 }

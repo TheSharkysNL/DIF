@@ -1,6 +1,6 @@
 use crate::cell::InstanceCell;
 use crate::components::{Component, ComponentLifetime, Injectable};
-use crate::sync::{InjectorLock};
+use crate::sync::{InjectorLock, InstanceCellLock};
 use crate::Injector;
 use std::any::{type_name, TypeId};
 use std::collections::hash_map::Entry;
@@ -14,7 +14,9 @@ use std::sync::{Arc, RwLock};
 pub(crate) struct DIContainer {
     components: HashMap<TypeId, SingleOrList<ContainerComponent>>,
     #[cfg(debug_assertions)]
-    current_dependency_chain: std::sync::Mutex<Vec<(TypeId, &'static str)>>,
+    current_dependency_chain: std::sync::Mutex<Vec<TypeId>>,
+    #[cfg(debug_assertions)]
+    current_dependency_chain_names: std::sync::Mutex<Vec<&'static str>>,
 }
 
 impl DIContainer {
@@ -62,7 +64,7 @@ impl DIContainer {
     }
 
     pub fn get<T : 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
-        self.get_underlying::<T>()
+        self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| {
                 InjectorLock {
                     value: match x {
@@ -74,7 +76,7 @@ impl DIContainer {
     }
 
     pub fn get_dyn<T : Injectable + ?Sized + 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
-        self.get_underlying::<T>()
+        self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| {
                 InjectorLock {
                     value: x
@@ -86,7 +88,7 @@ impl DIContainer {
     }
 
     pub fn get_list<T : Injectable + ?Sized  + 'static>(&self, injector: &Injector) -> Option<impl Iterator<Item=InjectorLock<T>>> {
-        self.get_underlying::<T>()
+        self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| x.iter()
                 .map(|item| InjectorLock {
                     value: item
@@ -95,9 +97,20 @@ impl DIContainer {
                 }))
     }
 
-    fn get_underlying<T : ?Sized  + 'static>(&self) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
+    pub fn get_instance_cell(&self, type_id: TypeId, injector: &Injector) -> Option<InstanceCellLock> {
+        self.get_underlying(type_id, "")
+            .map(|x| {
+                InstanceCellLock {
+                    value: x.first()
+                        .create_or_clone
+                        .get_instance_cell(injector, type_id)
+                }
+            })
+    }
+
+    fn get_underlying(&self, type_id: TypeId, type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
         let component = self.components
-            .get(&TypeId::of::<T>());
+            .get(&type_id);
 
         #[cfg(debug_assertions)]
         {
@@ -105,11 +118,16 @@ impl DIContainer {
                 let mut chain = self.current_dependency_chain.lock()
                     .unwrap();
 
-                if chain.contains(&(TypeId::of::<T>(), type_name::<T>())) {
-                    let error = self.create_circular_dependency_error::<T>(&mut chain);
+                if chain.contains(&type_id) {
+                    let mut names = self.current_dependency_chain_names.lock()
+                        .unwrap();
+                    let error = self.create_circular_dependency_error(&mut chain, &mut names, type_id, type_name);
                     Some(error)
                 } else {
-                    chain.push((TypeId::of::<T>(), type_name::<T>()));
+                    chain.push(type_id);
+                    let mut names = self.current_dependency_chain_names.lock()
+                        .unwrap();
+                    names.push(type_name);
                     None
                 }
             };
@@ -121,24 +139,25 @@ impl DIContainer {
 
         CircularDependencyGuard {
             value: component,
-            id: TypeId::of::<T>(),
+            id: type_id,
             container: self
         }
     }
 
-    fn create_circular_dependency_error<T : ?Sized + 'static>(&self, dependencies: &mut Vec<(TypeId, &'static str)>) -> String {
+    fn create_circular_dependency_error(&self, dependencies: &mut Vec<TypeId>, names: &mut Vec<&'static str>, type_id: TypeId, type_name: &'static str) -> String {
         let mut str = String::with_capacity(256);
 
-        str.write_fmt(format_args!("Circular dependency detected when trying to get: '{}'\n", type_name::<T>()))
+        str.write_fmt(format_args!("Circular dependency detected when trying to get: '{}'\n", type_name))
             .unwrap();
 
-        dependencies.push((TypeId::of::<T>(), type_name::<T>()));
+        dependencies.push(type_id);
+        names.push(type_name);
 
-        for (i, dependency) in dependencies.windows(2).enumerate() {
+        for (i, dependency) in names.windows(2).enumerate() {
             let left = &dependency[0];
             let right = &dependency[1];
 
-            str.write_fmt(format_args!("\n{}the instance '{}' is trying to get -> '{}'", if i != 0 { "which is trying to get " } else { "" }, left.1, right.1))
+            str.write_fmt(format_args!("\n{}the instance '{}' is trying to get -> '{}'", if i != 0 { "which is trying to get " } else { "" }, left, right))
                 .unwrap();
         }
 
@@ -247,12 +266,22 @@ struct CreateOrCloneTransient {
 }
 
 impl CreateOrClone {
-    pub fn create_or_clone<T : ?Sized>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
+    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
         match self {
             CreateOrClone::Singleton(item) =>
                 item.create_or_clone(injector),
             CreateOrClone::Transient(item) =>
                 item.create_or_clone(injector),
+            CreateOrClone::Empty => unreachable!("Empty create or clone type should never be used"),
+        }
+    }
+    
+    pub fn get_instance_cell(&self, injector: &Injector, type_id: TypeId) -> InstanceCell {
+        match self {
+            CreateOrClone::Singleton(item) =>
+                item.create_or_clone_any(injector),
+            CreateOrClone::Transient(item) =>
+                item.create_or_clone_any(injector),
             CreateOrClone::Empty => unreachable!("Empty create or clone type should never be used"),
         }
     }
@@ -263,7 +292,7 @@ impl CreateOrCloneSingleton {
         Self { func, value: RwLock::new(None) }
     }
 
-    pub fn create_or_clone<T : ?Sized>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
+    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
         let value = self.create_or_clone_any(&injector);
         value.get()
     }
@@ -294,7 +323,7 @@ impl CreateOrCloneTransient {
         Self { func }
     }
 
-    pub fn create_or_clone<T : ?Sized>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
+    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
         let value = self.create_or_clone_any(&injector);
         value.get()
     }
@@ -314,12 +343,17 @@ pub(crate) struct CircularDependencyGuard<'a, T> {
 #[cfg(debug_assertions)]
 impl<T> Drop for CircularDependencyGuard<'_, T> {
     fn drop(&mut self) {
-        let mut value = self.container.current_dependency_chain.lock()
+        let mut deps = self.container.current_dependency_chain.lock()
             .unwrap();
 
-        let index = value.iter().position(|x| x.0 == self.id);
+        let index = deps.iter().position(|x| x == &self.id);
         debug_assert!(index.is_some());
-        value.remove(index.unwrap());
+        deps.remove(index.unwrap());
+        
+        let mut names = self.container.current_dependency_chain_names.lock()
+            .unwrap();
+        
+        names.remove(index.unwrap());
     }
 }
 

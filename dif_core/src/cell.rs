@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{type_name, Any, TypeId};
 use std::mem;
 use std::ptr::drop_in_place;
 use std::sync::Arc;
@@ -7,12 +7,14 @@ use std::mem::ManuallyDrop;
 
 #[derive(Clone)]
 pub struct InstanceCell {
+    #[cfg(debug_assertions)]
+    type_id: TypeId,
     instance: ManuallyDrop<Arc<LockOrCell<dyn Any + Send + Sync>>>,
     _drop: unsafe fn(&mut Arc<LockOrCell<dyn Any + Send + Sync>>),
 }
 
 impl InstanceCell {
-    pub fn new<T : ?Sized>(instance: Arc<LockOrCell<T>>) -> Self {
+    pub(crate) fn new<T : ?Sized + 'static>(instance: Arc<LockOrCell<T>>) -> Self {
         // Safety: The drop in place fn should be safe to transmute here 
         // as we are always passing through a &mut Arc<LockOrCell<T>> 
         // but those bits were transmuted to act like &mut Arc<LockOrCell<dyn Any + Send + Sync>> using the into_any function
@@ -22,13 +24,20 @@ impl InstanceCell {
             let _drop_fn = mem::transmute::<_, unsafe fn(&mut Arc<LockOrCell<dyn Any + Send + Sync>>)>(drop_in_place::<Arc<LockOrCell<T>>> as *const ());
             let instance = ManuallyDrop::new(into_any(&instance).clone());
             InstanceCell {
+                #[cfg(debug_assertions)]
+                type_id: TypeId::of::<T>(),
                 instance,
                 _drop: _drop_fn
             }
         }
     }
     
-    pub fn get<T : ?Sized>(&self) -> Arc<LockOrCell<T>> {
+    pub fn get<T : ?Sized + 'static>(&self) -> Arc<LockOrCell<T>> {
+        if cfg!(debug_assertions) && self.type_id != TypeId::of::<T>() {
+            let type_name = type_name::<T>();
+            panic!("Invalid type of T given. Cannot convert this instance cell into the type of '{}'.", type_name);
+        }
+        
         let value = &self.instance;
         unsafe {
             from_any(value).clone()

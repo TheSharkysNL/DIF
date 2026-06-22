@@ -3,10 +3,11 @@ mod container;
 pub mod sync;
 mod cell;
 
+use std::any::{Any, TypeId};
 pub use components::*;
-
+use crate::cell::InstanceCell;
 use crate::container::DIContainer;
-use crate::sync::{InjectorLock};
+use crate::sync::{InjectorLock, InstanceCellLock};
 
 /// The global injector instance
 static mut INJECTOR_INSTANCE: Option<Injector> = None; 
@@ -112,6 +113,10 @@ impl Injector {
     /// ```
     pub fn get_list<T : Injectable + ?Sized  + 'static>(&self) -> Option<impl Iterator<Item=InjectorLock<T>>> {
         self.container.get_list(self)
+    }
+    
+    pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock> {
+        self.container.get_instance_cell(type_id, self)
     }
     
     /// Creates a new instance of the type `T` by using the instance components within the injector.
