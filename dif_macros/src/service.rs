@@ -1,7 +1,7 @@
-use crate::helpers::{get_associated_generic_type, get_generic, get_generic_type, get_iterator_impl, get_method, match_path_type, returns_self};
+use crate::helpers::{get_associated_generic_type, get_generic_type, get_iterator_impl, get_method, match_path_type, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::FnArg;
+use syn::{FnArg, Type};
 use syn::__private::TokenStream2;
 
 pub struct Service {
@@ -130,20 +130,28 @@ fn arg_to_injection(arg: &FnArg) -> TokenStream2 {
             let ty = arg.ty.as_ref();
             
             if match_path_type("dif::sync::InjectorLock", ty) {
-                let injection_type = get_generic(ty, "dif::sync::InjectorLock<T>");
-                quote! {
-                    let #name = injector.get::<#injection_type>().expect(concat!("The type: ", stringify!(#injection_type), " could not be resolved from the injection container."));
-                }
-            } else if match_path_type("dif::sync::InjectorLockDyn", ty) {
-                let injection_type = get_generic(ty, "dif::sync::InjectorLockDyn<T>");
-                quote! {
-                    let #name = injector.get_dyn::<#injection_type>().expect(concat!("The type: ", stringify!(#injection_type), " could not be resolved from the injection container."));
+                let injection_type = get_generic_type(ty, "dif::sync::InjectorLock<T>");
+
+                match injection_type {
+                    Ok(t) => match t {
+                        Type::Path(injection_type) => {
+                            quote!(let #name = injector.get::<#injection_type>().expect(concat!("The type '", stringify!(#injection_type), "' has not been added as a service."));)
+                                .into()
+                        }
+                        Type::TraitObject(dyn_type) => {
+                            quote!(let #name = injector.get_dyn::<#dyn_type>().expect(concat!("The type '", stringify!(#dyn_type), "' has not been added as a service."));)
+                                .into()
+                        }
+                        ty => syn::Error::new(ty.span(), "The injected type must be a path or trait object.")
+                            .to_compile_error().into()
+                    },
+                    Err(e) => e.to_compile_error().into()
                 }
             } else if let Some(result) = get_iterator_impl(ty) {
                 match result { 
                     Ok(iterator) => {
                         let inner_argument = get_associated_generic_type(&iterator.path, "std::iter::Iterator<Item = T>")
-                            .and_then(|x| get_generic_type(x, "dif::sync::InjectorLockDyn<T>"));
+                            .and_then(|x| get_generic_type(x, "dif::sync::InjectorLock<T>"));
                         
                         let inner_argument = match inner_argument {
                             Ok(x) => x,
