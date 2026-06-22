@@ -1,5 +1,3 @@
-use quote::ToTokens;
-use syn::__private::TokenStream2;
 use syn::{GenericArgument, ImplItem, ImplItemFn, ItemImpl, PathArguments, ReturnType, Type, TypeParamBound, TraitBound};
 use syn::spanned::Spanned;
 
@@ -62,13 +60,6 @@ pub fn match_path_type(name: &str, ty: &syn::Type) -> bool {
     }
 
     false
-}
-
-pub fn get_generic(ty: &syn::Type, name: &str) -> TokenStream2 {
-    match get_generic_type(ty, name) {
-        Ok(t) => t.into_token_stream(),
-        Err(e) => e.to_compile_error(),
-    }
 }
 
 pub fn get_generic_type<'a>(ty: &'a syn::Type, name: &str) -> Result<&'a syn::Type, syn::Error> {
