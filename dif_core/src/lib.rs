@@ -1,13 +1,12 @@
 mod components;
 mod container;
 pub mod sync;
-mod cell;
+pub mod cell;
 
-use std::any::{Any, TypeId};
-pub use components::*;
-use crate::cell::InstanceCell;
 use crate::container::DIContainer;
 use crate::sync::{InjectorLock, InstanceCellLock};
+pub use components::*;
+use std::any::{Any, TypeId};
 
 /// The global injector instance
 static mut INJECTOR_INSTANCE: Option<Injector> = None; 
