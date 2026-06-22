@@ -1,0 +1,11 @@
+[package]
+name = "dif_core"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+async = ["async-std", "multithreaded"]
+multithreaded = []
+
+[dependencies]
+async-std = { version =  "1.13.2", optional = true }

@@ -1,0 +1,16 @@
+[package]
+name = "dif"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+macros = []
+async = ["dif_core/async"]
+logger = ["chrono", "anyhow"]
+multithreaded = ["dif_core/multithreaded"]
+
+[dependencies]
+dif_core = { path = "dif_core" }
+dif_macros = { path = "dif_macros" }
+anyhow = { version =  "1.0.100", optional = true }
+chrono = { version =  "0.4.43", optional = true }
