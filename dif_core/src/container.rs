@@ -103,7 +103,7 @@ impl DIContainer {
                 InstanceCellLock {
                     value: x.first()
                         .create_or_clone
-                        .get_instance_cell(injector, type_id)
+                        .get_instance_cell(injector)
                 }
             })
     }
@@ -276,7 +276,7 @@ impl CreateOrClone {
         }
     }
     
-    pub fn get_instance_cell(&self, injector: &Injector, type_id: TypeId) -> InstanceCell {
+    pub fn get_instance_cell(&self, injector: &Injector) -> InstanceCell {
         match self {
             CreateOrClone::Singleton(item) =>
                 item.create_or_clone_any(injector),

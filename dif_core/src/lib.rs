@@ -6,10 +6,12 @@ pub mod cell;
 use crate::container::DIContainer;
 use crate::sync::{InjectorLock, InstanceCellLock};
 pub use components::*;
-use std::any::{Any, TypeId};
+use std::any::{TypeId};
+use std::sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// The global injector instance
-static mut INJECTOR_INSTANCE: Option<Injector> = None; 
+#[cfg(any(feature = "async", feature = "multithreaded"))]
+static INJECTOR_INSTANCE: LazyLock<RwLock<Injector>> = LazyLock::new(|| RwLock::new(Injector { container: DIContainer::default() })); 
 
 /// The main injector used for dependency injection
 #[derive(Default)]
@@ -311,57 +313,18 @@ impl Injector {
     pub fn component(&mut self, component: Component) {
         self.container.register(component)
     }
-
-    /// Gets a `'static` reference to the global injector. 
-    #[allow(static_mut_refs)]
-    pub fn global() -> &'static Self {
-        // Safety: The global injector instance can only be created once.
-        // This means that returning 'static references here is safe 
-        // as this function will only return a reference to the instance once it is created
-        // and after that the global instance never changes so there will be no dangling pointers
-        unsafe {
-            INJECTOR_INSTANCE
-                .as_ref()
-                .expect("Injector must be initialized first before a handle can be taken for it. Use the Injector::initialize method to initialize the injector.")
-        }
+    
+    /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
+    #[cfg(any(feature = "async", feature = "multithreaded"))]
+    pub fn global() -> RwLockReadGuard<'static, Injector> {
+        INJECTOR_INSTANCE.read()
+            .unwrap()
     }
 
-    /// Initializes the global injector. 
-    /// 
-    /// The `init_method` initializes the injector with the instances you want to register.
-    /// 
-    /// # Panics
-    /// This method will panic if it is used more than once. 
-    /// The global injector can only be initialized once and after that it can be retrieved via the Injector::global method.
-    /// 
-    /// # Examples
-    /// 
-    /// ```rust
-    ///  Injector::initialize(|injector| { // use method to register instances
-    ///     injector.singleton::<ConsoleLogger>();
-    ///  });
-    ///  
-    ///  // get global injector
-    ///  let value = Injector::global()
-    ///     .get::<ConsoleLogger>(); // get the instance
-    ///  assert!(value.is_some()); // This passes as the Injector is fully initialized
-    /// ```
-    /// 
-    #[allow(static_mut_refs)]
-    pub fn initialize<F : FnOnce(&mut Injector)>(init_method: F) {
-        // Safety: The global injector instance can only be created once.
-        // After it is created it will never be mutated.
-        // This way it ensures that there are no race conditions
-        unsafe {
-            if INJECTOR_INSTANCE.is_some() {
-                panic!("Another global instance of a injector is already active. Cannot create a global instance of a injector twice.");
-            }
-            
-            let mut injector = Injector::new();
-            
-            init_method(&mut injector);
-        
-            INJECTOR_INSTANCE = Some(injector);
-        }
+    /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
+    #[cfg(any(feature = "async", feature = "multithreaded"))]
+    pub fn global_mut() -> RwLockWriteGuard<'static, Injector> {
+        INJECTOR_INSTANCE.write()
+            .unwrap()
     }
 }
