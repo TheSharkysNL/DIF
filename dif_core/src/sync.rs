@@ -96,7 +96,7 @@ pub struct InstanceCellLock {
 impl InstanceCellLock {
     /// Will return an error if the mutex has been poisoned.
     #[cfg(feature = "async")]
-    pub fn lock<T : ?Sized + 'static, F : FnOnce(&mut T) -> O, O>(&self, fun: F) -> O {
+    pub async fn lock<T : ?Sized + 'static, F : FnOnce(&mut T) -> O, O>(&self, fun: F) -> O {
         let value = self.value.get::<T>();
         let mut guard = value.lock().await;
         fun(guard.deref_mut())
