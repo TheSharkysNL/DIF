@@ -16,6 +16,7 @@ pub use std::sync::{Mutex as LockOrCell, MutexGuard as Guard};
 pub use std::cell::{RefCell as LockOrCell, Ref as Guard, RefMut as GuardMut};
 use crate::cell::InstanceCell;
 
+#[derive(Clone, Debug)]
 pub struct InjectorLock<T : ?Sized> {
     pub(crate) value: Arc<LockOrCell<T>>,
 }
@@ -89,6 +90,7 @@ impl<'a, T : 'static + ?Sized> DerefMut for InjectorLockGuardMut<'a, T> {
     }
 }
 
+#[derive(Clone)]
 pub struct InstanceCellLock {
     pub(crate) value: InstanceCell,
 }
