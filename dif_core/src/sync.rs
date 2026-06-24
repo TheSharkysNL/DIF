@@ -16,9 +16,17 @@ pub use std::sync::{Mutex as LockOrCell, MutexGuard as Guard};
 pub use std::cell::{RefCell as LockOrCell, Ref as Guard, RefMut as GuardMut};
 use crate::cell::InstanceCell;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct InjectorLock<T : ?Sized> {
     pub(crate) value: Arc<LockOrCell<T>>,
+}
+
+impl<T> Clone for InjectorLock<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
+    }
 }
 
 impl<T : ?Sized> InjectorLock<T> {
