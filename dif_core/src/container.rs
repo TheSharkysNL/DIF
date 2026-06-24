@@ -198,7 +198,7 @@ impl<'a, T> Iterator for SingleOrListIterator<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.items {
+        let item = match self.items {
             SingleOrList::Single(item) => {
                 if self.position != 0 {
                     None
@@ -208,17 +208,19 @@ impl<'a, T> Iterator for SingleOrListIterator<'a, T> {
             },
             SingleOrList::List(list) => {
                 let item = list.get(self.position);
-                self.position += 1;
 
                 item
             }
-        }
+        };
+        
+        self.position += 1;
+        item
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self.items {
-            SingleOrList::Single(_) => (0, Some(1)),
-            SingleOrList::List(x) => (0, Some(x.len()))
+            SingleOrList::Single(_) => (1, Some(1)),
+            SingleOrList::List(x) => (x.len(), Some(x.len()))
         }
     }
 }
