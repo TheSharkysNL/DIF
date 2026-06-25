@@ -21,7 +21,7 @@ pub struct InjectorLock<T : ?Sized> {
     pub(crate) value: Arc<LockOrCell<T>>,
 }
 
-impl<T> Clone for InjectorLock<T> {
+impl<T : ?Sized> Clone for InjectorLock<T> {
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),
