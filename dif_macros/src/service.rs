@@ -1,7 +1,7 @@
 use crate::helpers::{get_associated_generic_type, get_generic_type, get_iterator_impl, get_method, match_path_type, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::{FnArg, Type};
+use syn::{FnArg, ImplItem, Type};
 use syn::__private::TokenStream2;
 
 pub struct Service {
@@ -46,8 +46,6 @@ impl ToTokens for Service {
                 ty: &self.item_impl.self_ty,
                 generics
             };
-            
-            // let unique_id_impl = UniqueIdImpl::new(&self.item_impl.self_ty, generics);
             
             quote! {
                 #from_injector_impl
@@ -182,9 +180,28 @@ impl ToTokens for DynamicInjectableImpl<'_> {
         let ty = self.item_impl.self_ty.as_ref();
         let generics = self.generics;
         
+        let types = self.item_impl.items
+            .iter()
+            .filter_map(|item| match item {
+                ImplItem::Type(ty) => Some(ty),
+                _ => None,
+            })
+            .map(|ty| {
+                let name = &ty.ident;
+                let ty = &ty.ty;
+                quote! { #name = #ty }
+            })
+            .collect::<Vec<_>>();
+        
+        let types = if types.is_empty() {
+            TokenStream2::new()
+        } else {
+            quote! { <#(#types),*> }
+        };
+        
         let tree = quote! {
-            impl #generics dif::DynamicInjectable<dyn #_trait> for #ty {
-                fn into_dynamic(self) -> std::sync::Arc<dif::sync::LockOrCell<dyn #_trait>> {
+            impl #generics dif::DynamicInjectable<dyn #_trait #types> for #ty {
+                fn into_dynamic(self) -> std::sync::Arc<dif::sync::LockOrCell<dyn #_trait #types>> {
                     std::sync::Arc::new(dif::sync::LockOrCell::new(self))
                 }
             }
