@@ -1,7 +1,7 @@
 use crate::helpers::{get_associated_generic_type, get_generic_type, get_iterator_impl, get_method, match_path_type, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::{FnArg, ImplItem, Type};
+use syn::{FnArg, ImplItem, Pat, PatType, Type};
 use syn::__private::TokenStream2;
 
 pub struct Service {
@@ -78,8 +78,8 @@ impl ToTokens for FromInjectorImpl<'_> {
             
             let args = new_method.sig.inputs.iter()
                 .filter_map(|arg| match arg {
-                    FnArg::Typed(ty) => Some(&ty.pat),
-                    FnArg::Receiver(_) => None,
+                    FnArg::Typed(PatType { pat, .. }) => if let Pat::Ident(pat) = pat.as_ref() { Some(&pat.ident) } else { None },
+                    _ => None,
                 });
             
             let mut block = quote! { Self::new(#(#args),*) };
