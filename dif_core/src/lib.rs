@@ -112,7 +112,7 @@ impl Injector {
     ///     logger.write("It worked!");
     /// }
     /// ```
-    pub fn get_list<T : Injectable + ?Sized  + 'static>(&self) -> Option<impl Iterator<Item=InjectorLock<T>>> {
+    pub fn get_list<'a, T : Injectable + ?Sized  + 'static>(&'a self) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
         self.container.get_list(self)
     }
     

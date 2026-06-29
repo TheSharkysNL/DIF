@@ -87,7 +87,7 @@ impl DIContainer {
             })
     }
 
-    pub fn get_list<T : Injectable + ?Sized  + 'static>(&self, injector: &Injector) -> Option<impl Iterator<Item=InjectorLock<T>>> {
+    pub fn get_list<'a, T : Injectable + ?Sized  + 'static>(&'a self, injector: &'a Injector) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| x.iter()
                 .map(|item| InjectorLock {
