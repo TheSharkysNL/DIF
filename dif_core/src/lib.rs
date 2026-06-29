@@ -7,11 +7,15 @@ use crate::container::DIContainer;
 use crate::sync::{InjectorLock, InstanceCellLock};
 pub use components::*;
 use std::any::{TypeId};
+use std::ops::{Deref, DerefMut};
 use std::sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// The global injector instance
 #[cfg(any(feature = "async", feature = "multithreaded"))]
-static INJECTOR_INSTANCE: LazyLock<RwLock<Injector>> = LazyLock::new(|| RwLock::new(Injector { container: DIContainer::default() })); 
+static INJECTOR_INSTANCE: LazyLock<RwLock<Injector>> = LazyLock::new(|| RwLock::new(Injector { container: DIContainer::default() }));
+
+#[cfg(not(any(feature = "async", feature = "multithreaded")))]
+static mut INJECTOR_INSTANCE: Option<Injector> = None;
 
 /// The main injector used for dependency injection
 #[derive(Default)]
@@ -23,7 +27,7 @@ impl Injector {
     /// Creates a new instance of the injector
     pub fn new() -> Self {
         Self {
-            container: Default::default()
+            container: Default::default(),
         }
     }
     
@@ -314,7 +318,7 @@ impl Injector {
         self.container.register(component)
     }
     
-    /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
+    /// Gets the global injector so services can be retrieved. Can panic if the underlying rwlock was poisoned.
     #[cfg(any(feature = "async", feature = "multithreaded"))]
     pub fn global() -> RwLockReadGuard<'static, Injector> {
         INJECTOR_INSTANCE.read()
@@ -327,4 +331,40 @@ impl Injector {
         INJECTOR_INSTANCE.write()
             .unwrap()
     }
+
+    /// Initially mutates the injector for later use.
+    #[cfg(not(any(feature = "async", feature = "multithreaded")))]
+    #[allow(static_mut_refs)]
+    pub fn initialize<F : FnOnce(&mut Injector)>(init_func: F) {
+        // Safety: The injector instance can only be initialized once and then never be mutated again.
+        // After this you can only get an injector reference to retrieve its services.
+        // Meaning that it cannot be mutated when someone has a reference to it.
+        unsafe {
+            match &mut INJECTOR_INSTANCE {
+                Some(_) => panic!("The injector cannot be initialized more than once."),
+                None => {
+                    let mut new_injector = Injector::new();
+                    init_func(&mut new_injector);
+                    
+                    INJECTOR_INSTANCE = Some(new_injector);
+                }
+            }
+        }
+    }
+
+    /// Gets the global injector so services can be retrieved.
+    #[cfg(not(any(feature = "async", feature = "multithreaded")))]
+    #[allow(static_mut_refs)]
+    pub fn global() -> &'static Injector {
+        // Safety: The injector instance can only be initialized once and then never be mutated again.
+        // After this you can only get an injector reference to retrieve its services.
+        // Meaning that it cannot be mutated when someone has a reference to it.
+        unsafe {
+            match &INJECTOR_INSTANCE {
+                Some(instance) => instance,
+                None => panic!("Injector has not been initialized. Please us the static initialize function to initialize the injector."),
+            }
+        }
+    }
+    
 }
