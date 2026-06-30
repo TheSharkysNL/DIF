@@ -9,9 +9,8 @@ use std::fmt::Write;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
-
 #[cfg(any(feature = "multithreaded", feature = "async"))]
-pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell + Send;
+pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell + Send + Sync;
 
 #[cfg(not(any(feature = "multithreaded", feature = "async")))]
 pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell;
