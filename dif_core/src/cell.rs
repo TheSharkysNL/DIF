@@ -1,3 +1,4 @@
+#[allow(unused)]
 use std::any::{type_name, Any, TypeId};
 use std::mem;
 use std::ptr::drop_in_place;
@@ -39,7 +40,8 @@ impl InstanceCell {
     }
     
     pub fn get<T : ?Sized + 'static>(&self) -> Arc<LockOrCell<T>> {
-        if cfg!(debug_assertions) && self.type_id != TypeId::of::<T>() {
+        #[cfg(debug_assertions)]
+        if self.type_id != TypeId::of::<T>() {
             let type_name = type_name::<T>();
             panic!("Invalid type of T given. Cannot convert this instance cell into the type of '{}'.", type_name);
         }

@@ -113,7 +113,7 @@ impl DIContainer {
             })
     }
 
-    fn get_underlying(&self, type_id: TypeId, type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
+    fn get_underlying(&self, type_id: TypeId, #[allow(unused)] type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
         let component = self.components
             .get(&type_id);
 
@@ -149,6 +149,7 @@ impl DIContainer {
         }
     }
 
+    #[allow(unused)]
     fn create_circular_dependency_error(&self, dependencies: &mut Vec<TypeId>, names: &mut Vec<&'static str>, type_id: TypeId, type_name: &'static str) -> String {
         let mut str = String::with_capacity(256);
 
@@ -341,6 +342,7 @@ impl CreateOrCloneTransient {
     }
 }
 
+#[allow(unused)]
 pub(crate) struct CircularDependencyGuard<'a, T> {
     container: &'a DIContainer,
     value: T,
