@@ -1,17 +1,18 @@
 use crate::cell::InstanceCell;
-use crate::sync::LockOrCell;
+use crate::sync::{LockOrCell, SendTrait};
 use crate::Injector;
 use std::any::TypeId;
 use std::sync::Arc;
+use crate::container::DynInstanceCellFn;
 
-pub trait Injectable {
+pub trait Injectable : SendTrait + 'static {
 }
 
 pub trait FromInjector {
     fn from_injector(injector: &Injector) -> Self;
 }
 
-pub trait DynamicInjectable<T : Injectable + Sync + Send + ?Sized> : FromInjector {
+pub trait DynamicInjectable<T : Injectable + ?Sized> : FromInjector + SendTrait + 'static {
     fn into_dynamic(self) -> Arc<LockOrCell<T>>;
 }
 
@@ -24,7 +25,7 @@ pub enum ComponentLifetime {
 
 pub struct Component {
     lifetime: ComponentLifetime,
-    create_func: Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>,
+    create_func: Box<DynInstanceCellFn>,
     unique_id: TypeId,
     is_dynamic: bool,
     
@@ -45,7 +46,7 @@ impl Component {
         self.is_dynamic
     }
     
-    pub fn into_create_func(self) -> Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync> {
+    pub fn into_create_func(self) -> Box<DynInstanceCellFn> {
         self.create_func
     }
     
@@ -105,7 +106,7 @@ impl Component {
     }
 }
 
-impl<T : FromInjector + 'static> ComponentBuilder<T> {
+impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
     pub fn with_factory(self, factory: fn(&Injector) -> T) -> Self {
         Self {
             lifetime: self.lifetime,
@@ -118,7 +119,7 @@ impl<T : FromInjector + 'static> ComponentBuilder<T> {
         }
     }
 
-    pub fn into_dynamic<TDyn : Injectable + Sync + Send + ?Sized  + 'static>(self) -> Self
+    pub fn into_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
         where T : DynamicInjectable<TDyn>
     {
         Self {

@@ -70,7 +70,7 @@ impl Drop for AnotherLogger {
 }
 
 #[dynamic_service]
-pub trait Logger : Send + Sync {
+pub trait Logger : Send {
     fn write(&mut self, message: &str);
 }
 

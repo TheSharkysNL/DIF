@@ -4,15 +4,13 @@ pub mod sync;
 pub mod cell;
 
 use crate::container::DIContainer;
-use crate::sync::{InjectorLock, InstanceCellLock};
+use crate::sync::{InjectorLock, InstanceCellLock, SendTrait};
 pub use components::*;
 use std::any::{TypeId};
-use std::ops::{Deref, DerefMut};
-use std::sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// The global injector instance
 #[cfg(any(feature = "async", feature = "multithreaded"))]
-static INJECTOR_INSTANCE: LazyLock<RwLock<Injector>> = LazyLock::new(|| RwLock::new(Injector { container: DIContainer::default() }));
+static INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector { container: DIContainer::default() }));
 
 #[cfg(not(any(feature = "async", feature = "multithreaded")))]
 static mut INJECTOR_INSTANCE: Option<Injector> = None;
@@ -85,7 +83,7 @@ impl Injector {
     ///  // use the instance
     ///  logger.write("It worked!");
     /// ```
-    pub fn get_dyn<T : Injectable + ?Sized + 'static>(&self) -> Option<InjectorLock<T>> {
+    pub fn get_dyn<T : ?Sized + 'static>(&self) -> Option<InjectorLock<T>> {
         self.container.get_dyn(self)
     }
 
@@ -116,10 +114,11 @@ impl Injector {
     ///     logger.write("It worked!");
     /// }
     /// ```
-    pub fn get_list<'a, T : Injectable + ?Sized  + 'static>(&'a self) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
+    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
         self.container.get_list(self)
     }
     
+    /// Gets an Any type that can be downcast to it's type.
     pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock> {
         self.container.get_instance_cell(type_id, self)
     }
@@ -175,7 +174,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.singleton::<ConsoleLogger>();
     /// ```
-    pub fn singleton<T : FromInjector + 'static>(&mut self) {
+    pub fn singleton<T : FromInjector + SendTrait + 'static>(&mut self) {
         self.component(
             Component::singleton::<T>()
                 .build()
@@ -196,7 +195,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.transient::<ConsoleLogger>();
     /// ```
-    pub fn transient<T : FromInjector + 'static>(&mut self) {
+    pub fn transient<T : FromInjector + SendTrait + 'static>(&mut self) {
         self.component(
             Component::transient::<T>()
                 .build()
@@ -225,7 +224,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.singleton_dyn::<dyn Logger>();
     /// ```
-    pub fn singleton_dyn<T : DynamicInjectable<TDyn> + 'static, TDyn : Sync + Send + Injectable + ?Sized + 'static>(&mut self) {
+    pub fn singleton_dyn<T : DynamicInjectable<TDyn>, TDyn : Injectable + ?Sized>(&mut self) {
         self.component(
             Component::with_no_id::<T>(ComponentLifetime::Singleton)
                 .into_dynamic::<TDyn>()
@@ -256,7 +255,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.transient_dyn::<dyn Logger>();
     /// ```
-    pub fn transient_dyn<T : DynamicInjectable<TDyn> + 'static, TDyn : Sync + Send + Injectable + ?Sized + 'static>(&mut self) {
+    pub fn transient_dyn<T : DynamicInjectable<TDyn>, TDyn : Injectable + ?Sized>(&mut self) {
         self.component(
             Component::with_no_id::<T>(ComponentLifetime::Transient)
                 .into_dynamic::<TDyn>()
@@ -320,14 +319,14 @@ impl Injector {
     
     /// Gets the global injector so services can be retrieved. Can panic if the underlying rwlock was poisoned.
     #[cfg(any(feature = "async", feature = "multithreaded"))]
-    pub fn global() -> RwLockReadGuard<'static, Injector> {
+    pub fn global() -> std::sync::RwLockReadGuard<'static, Injector> {
         INJECTOR_INSTANCE.read()
             .unwrap()
     }
 
     /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
     #[cfg(any(feature = "async", feature = "multithreaded"))]
-    pub fn global_mut() -> RwLockWriteGuard<'static, Injector> {
+    pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, Injector> {
         INJECTOR_INSTANCE.write()
             .unwrap()
     }

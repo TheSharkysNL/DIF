@@ -1,5 +1,5 @@
 use crate::cell::InstanceCell;
-use crate::components::{Component, ComponentLifetime, Injectable};
+use crate::components::{Component, ComponentLifetime};
 use crate::sync::{InjectorLock, InstanceCellLock};
 use crate::Injector;
 use std::any::{type_name, TypeId};
@@ -9,6 +9,12 @@ use std::fmt::Write;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
+
+#[cfg(any(feature = "multithreaded", feature = "async"))]
+pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell + Send;
+
+#[cfg(not(any(feature = "multithreaded", feature = "async")))]
+pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell;
 
 #[derive(Default)]
 pub(crate) struct DIContainer {
@@ -75,7 +81,7 @@ impl DIContainer {
             })
     }
 
-    pub fn get_dyn<T : Injectable + ?Sized + 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
+    pub fn get_dyn<T : ?Sized + 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| {
                 InjectorLock {
@@ -87,7 +93,7 @@ impl DIContainer {
             })
     }
 
-    pub fn get_list<'a, T : Injectable + ?Sized  + 'static>(&'a self, injector: &'a Injector) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
+    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| x.iter()
                 .map(|item| InjectorLock {
@@ -259,12 +265,12 @@ enum CreateOrClone {
 }
 
 struct CreateOrCloneSingleton {
-    func: Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>,
+    func: Box<DynInstanceCellFn>,
     value: RwLock<Option<InstanceCell>>,
 }
 
 struct CreateOrCloneTransient {
-    func: Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>,
+    func: Box<DynInstanceCellFn>,
 }
 
 impl CreateOrClone {
@@ -290,7 +296,7 @@ impl CreateOrClone {
 }
 
 impl CreateOrCloneSingleton {
-    pub fn new(func: Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>) -> Self {
+    pub fn new(func: Box<DynInstanceCellFn>) -> Self {
         Self { func, value: RwLock::new(None) }
     }
 
@@ -321,7 +327,7 @@ impl CreateOrCloneSingleton {
 }
 
 impl CreateOrCloneTransient {
-    pub fn new(func: Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>) -> Self {
+    pub fn new(func: Box<DynInstanceCellFn>) -> Self {
         Self { func }
     }
 

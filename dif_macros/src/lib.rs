@@ -61,7 +61,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
 /// 
 /// ```rust
 /// #[dynamic_service]
-/// pub trait Logger : Send + Sync {
+/// pub trait Logger : Send {
 ///     fn write(&mut self, message: &str);
 /// }
 /// ```

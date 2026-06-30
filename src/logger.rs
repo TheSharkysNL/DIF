@@ -60,7 +60,7 @@ impl Logger {
 }
 
 #[dynamic_service]
-pub trait ChildLogger : Send + Sync {
+pub trait ChildLogger : Send {
     fn can_handle(&self, log_level: LogLevel) -> bool;
     
     fn log(&mut self, level: LogLevel, message: &Arguments<'_>, error: &anyhow::Error);

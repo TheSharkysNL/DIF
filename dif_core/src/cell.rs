@@ -2,26 +2,32 @@ use std::any::{type_name, Any, TypeId};
 use std::mem;
 use std::ptr::drop_in_place;
 use std::sync::Arc;
-use crate::sync::LockOrCell;
+use crate::sync::{LockOrCell, SendTrait};
 use std::mem::ManuallyDrop;
+
+#[cfg(any(feature = "multithreaded", feature = "async"))]
+type DynAny = dyn Any + Send;
+
+#[cfg(not(any(feature = "multithreaded", feature = "async")))]
+type DynAny = dyn Any;
 
 #[derive(Clone)]
 pub struct InstanceCell {
     #[cfg(debug_assertions)]
     type_id: TypeId,
-    instance: ManuallyDrop<Arc<LockOrCell<dyn Any + Send + Sync>>>,
-    _drop: unsafe fn(&mut Arc<LockOrCell<dyn Any + Send + Sync>>),
+    instance: ManuallyDrop<Arc<LockOrCell<DynAny>>>,
+    _drop: unsafe fn(&mut Arc<LockOrCell<DynAny>>),
 }
 
 impl InstanceCell {
-    pub(crate) fn new<T : ?Sized + 'static>(instance: Arc<LockOrCell<T>>) -> Self {
+    pub(crate) fn new<T : ?Sized + 'static + SendTrait>(instance: Arc<LockOrCell<T>>) -> Self {
         // Safety: The drop in place fn should be safe to transmute here 
         // as we are always passing through a &mut Arc<LockOrCell<T>> 
-        // but those bits were transmuted to act like &mut Arc<LockOrCell<dyn Any + Send + Sync>> using the into_any function
+        // but those bits were transmuted to act like &mut Arc<LockOrCell<DynAny>> using the into_any function
         // but passing data through as a reference makes the callee responsible for the type
         // this way we can safely drop the T type, while not holding a generic type reference to T
         unsafe {
-            let _drop_fn = mem::transmute::<_, unsafe fn(&mut Arc<LockOrCell<dyn Any + Send + Sync>>)>(drop_in_place::<Arc<LockOrCell<T>>> as *const ());
+            let _drop_fn = mem::transmute::<_, unsafe fn(&mut Arc<LockOrCell<DynAny>>)>(drop_in_place::<Arc<LockOrCell<T>>> as *const ());
             let instance = ManuallyDrop::new(into_any(&instance).clone());
             InstanceCell {
                 #[cfg(debug_assertions)]
@@ -53,14 +59,14 @@ impl Drop for InstanceCell {
     }
 }
 
-unsafe fn from_any<'a, T : ?Sized>(value: &'a Arc<LockOrCell<dyn Any + Send + Sync>>) -> &'a Arc<LockOrCell<T>> {
-    let any_ptr = value as *const Arc<LockOrCell<dyn Any + Send + Sync>>;
+unsafe fn from_any<'a, T : ?Sized>(value: &'a Arc<LockOrCell<DynAny>>) -> &'a Arc<LockOrCell<T>> {
+    let any_ptr = value as *const Arc<LockOrCell<DynAny>>;
     let real_ptr = any_ptr as *const Arc<LockOrCell<T>>;
     unsafe { &*real_ptr }
 }
 
-unsafe fn into_any<'a, T : ?Sized>(value: &'a Arc<LockOrCell<T>>) -> &'a Arc<LockOrCell<dyn Any + Send + Sync>> {
+unsafe fn into_any<'a, T : ?Sized>(value: &'a Arc<LockOrCell<T>>) -> &'a Arc<LockOrCell<DynAny>> {
     let real_ptr = value as *const Arc<LockOrCell<T>>;
-    let any_ptr = real_ptr as *const Arc<LockOrCell<dyn Any + Send + Sync>>;
+    let any_ptr = real_ptr as *const Arc<LockOrCell<DynAny>>;
     unsafe { &*any_ptr }
 }

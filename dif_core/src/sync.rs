@@ -14,6 +14,7 @@ pub use std::sync::{Mutex as LockOrCell, MutexGuard as Guard};
 
 #[cfg(not(feature = "multithreaded"))]
 pub use std::cell::{RefCell as LockOrCell, Ref as Guard, RefMut as GuardMut};
+
 use crate::cell::InstanceCell;
 
 #[derive(Debug)]
@@ -110,3 +111,15 @@ impl InstanceCellLock {
         }
     }
 }
+
+#[cfg(any(feature = "multithreaded", feature = "async"))]
+pub trait SendTrait : Send {}
+
+#[cfg(not(any(feature = "multithreaded", feature = "async")))]
+pub trait SendTrait {}
+
+#[cfg(any(feature = "multithreaded", feature = "async"))]
+impl<T : Send + ?Sized> SendTrait for T {}
+
+#[cfg(not(any(feature = "multithreaded", feature = "async")))]
+impl<T : ?Sized> SendTrait for T {}
