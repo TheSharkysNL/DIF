@@ -54,37 +54,8 @@ impl Injector {
     /// // use the instance
     /// logger.write("It worked!");
     /// ```
-    pub fn get<T : 'static>(&self) -> Option<InjectorLock<T>> {
+    pub fn get<T : ?Sized + 'static>(&self) -> Option<InjectorLock<T>> {
         self.container.get(self)
-    }
-    
-    /// Gets a thread-safe Mutex for a `dyn` type of `T`. 
-    /// 
-    /// Returns `None` if the `T` instance has not been registered.
-    /// 
-    /// # Examples
-    /// 
-    /// ```rust
-    /// // create injector
-    /// let mut injector = Injector::new();
-    ///     
-    ///  // register dynamic type to the injector
-    ///  injector.singleton_dyn::<ConsoleLogger, dyn Logger>(); 
-    ///     
-    ///  // code here...
-    ///     
-    ///  // get the instance to the dynamic type
-    ///  let logger = injector.get_dyn::<dyn Logger>()
-    ///     .unwrap(); // unwrap here as dyn Logger is known to have been registered to the injector
-    ///  let mut logger = logger
-    ///     .lock()
-    ///     .await;
-    ///     
-    ///  // use the instance
-    ///  logger.write("It worked!");
-    /// ```
-    pub fn get_dyn<T : ?Sized + 'static>(&self) -> Option<InjectorLock<T>> {
-        self.container.get_dyn(self)
     }
 
     /// Gets a thread-safe list of all the `dyn` instances of `T` that have been registered.
@@ -205,13 +176,13 @@ impl Injector {
     /// Registers a `dyn` singleton instance to the injector.
     ///
     /// A singleton meaning that the instance is created once 
-    /// and then reused for every call to `injector.get_dyn::<TDyn>()` or `injector.get_list::<TDyn>()`.
+    /// and then reused for every call to `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
     /// 
     /// # Edge cases
     /// 
     /// When registering multiple instances of a dynamic type. 
     /// Getting all the instances of that dynamic type can be done with the `injector.get_list::<TDyn>()`.
-    /// If the regular (`injector.get_dyn::<TDyn>()`) method is used, the first instance that was registered will be resolved.
+    /// If the regular (`injector.get::<TDyn>()`) method is used, the first instance that was registered will be resolved.
     ///
     /// Registering a dynamic type, will not also register the original type `T`. This must be done separately.
     /// 
@@ -226,8 +197,8 @@ impl Injector {
     /// ```
     pub fn singleton_dyn<T : DynamicInjectable<TDyn>, TDyn : Injectable + ?Sized>(&mut self) {
         self.component(
-            Component::with_no_id::<T>(ComponentLifetime::Singleton)
-                .into_dynamic::<TDyn>()
+            Component::singleton::<T>()
+                .with_dynamic::<TDyn>()
                 .build()
         )
     }
@@ -235,14 +206,14 @@ impl Injector {
     /// Registers a `dyn` transient instance to the injector.
     ///
     /// A transient meaning that the instance is created 
-    /// for every call to `injector.get_dyn::<TDyn>()` 
+    /// for every call to `injector.get::<TDyn>()` 
     /// or every time the iterator resolved from `injector.get_list::<TDyn>()` is iterated through.
     ///
     /// # Edge cases
     ///
     /// When registering multiple instances of a dynamic type. 
     /// Getting all the instances of that dynamic type can be done with the `injector.get_list::<TDyn>()`.
-    /// If the regular (`injector.get_dyn::<TDyn>()`) method is used, the first instance that was registered will be resolved.
+    /// If the regular (`injector.get::<TDyn>()`) method is used, the first instance that was registered will be resolved.
     ///
     /// Registering a dynamic type, will not also register the original type `T`. This must be done separately.
     ///
@@ -257,8 +228,8 @@ impl Injector {
     /// ```
     pub fn transient_dyn<T : DynamicInjectable<TDyn>, TDyn : Injectable + ?Sized>(&mut self) {
         self.component(
-            Component::with_no_id::<T>(ComponentLifetime::Transient)
-                .into_dynamic::<TDyn>()
+            Component::transient::<T>()
+                .with_dynamic::<TDyn>()
                 .build()
         )
     }
@@ -308,9 +279,24 @@ impl Injector {
     ///  // register component type
     ///  injector.component(
     ///     Component::singleton::<ConsoleLogger>()
-    ///         .into_dynamic::<dyn Logger>() // use into_dynamic to use dyn instance
+    ///         .with_dynamic::<dyn Logger>() // use create_dynamic to use dyn instance
     ///         .build()
     ///  );
+    /// ```
+    /// 
+    /// Create with multiple dynamic types
+    ///
+    /// ```rust
+    ///  // create injector
+    ///  let mut injector = Injector::new();
+    ///
+    ///  // register component type
+    ///  injector.component(
+    ///     Component::singleton::<ConsoleLogger>()
+    ///         .with_dynamic::<dyn Logger>() // use create_dynamic to use dyn instance
+    ///         .with_dynamic::<dyn OtherDyn>()
+    ///         .build()
+    ///  ); // this will use one singular underlying ConsoleLogger type.
     /// ```
     /// 
     pub fn component(&mut self, component: Component) {

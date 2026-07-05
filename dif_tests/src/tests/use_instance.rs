@@ -34,7 +34,7 @@ pub fn use_logger_instance_dynamic() {
 
     injector.singleton_dyn::<TestLogger, dyn Logger>();
 
-    let logger = injector.get_dyn::<dyn Logger>().unwrap();
+    let logger = injector.get::<dyn Logger>().unwrap();
 
     let mut lock = logger.lock().unwrap();
 

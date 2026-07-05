@@ -19,7 +19,7 @@ pub fn get_empty_dynamic() {
     let injector = Injector::new();
 
     // Act
-    let get = injector.get_dyn::<dyn Logger>();
+    let get = injector.get::<dyn Logger>();
 
     // Assert
     assert!(get.is_none());
@@ -102,8 +102,8 @@ pub fn get_singleton_multiple_times_dynamic() {
 
         {
             // Act
-            let get = injector.get_dyn::<dyn Logger>();
-            let get2 = injector.get_dyn::<dyn Logger>();
+            let get = injector.get::<dyn Logger>();
+            let get2 = injector.get::<dyn Logger>();
 
             // Assert
             assert!(get.is_some());
@@ -126,8 +126,8 @@ pub fn get_transient_multiple_times_dynamic() {
     reset();
     {
         // Act
-        let get = injector.get_dyn::<dyn Logger>();
-        let get2 = injector.get_dyn::<dyn Logger>();
+        let get = injector.get::<dyn Logger>();
+        let get2 = injector.get::<dyn Logger>();
 
         // Assert
         assert!(get.is_some());

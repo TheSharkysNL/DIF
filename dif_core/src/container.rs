@@ -26,61 +26,52 @@ pub(crate) struct DIContainer {
 
 impl DIContainer {
     pub fn register(&mut self, component: Component) {
-        let unique_id = component.unique_id();
-        #[cfg(debug_assertions)]
-        let type_name = component.type_name();
-        let container_component = component.into();
-        match self.components.entry(unique_id) {
-            // if it is already occupied then it could be added to a list
-            Entry::Occupied(mut o) => {
-                let value = o.get_mut();
-                match value {
-                    SingleOrList::Single(item) => {
-                        // If the item is a single item then check if the item is dynamic meaning it can be a list
-                        if !item.is_dynamic {
-                            if cfg!(debug_assertions) { // give more informative error when in debug
-                                #[cfg(debug_assertions)]
-                                panic!("You are trying to register the type '{}'. But that type has already been registered or a type with a similar id has already been added. The type that was already added is: '{}'. If these types do not match, that means that you has a id collision.", type_name, item.type_name);
-                            } else {
-                                panic!("The type you are trying to register has already been registered.");
+        let components: Vec<ContainerComponent> = component.into();
+        for component in components {
+            let unique_id = component.unique_id;
+            #[cfg(debug_assertions)]
+            let type_name = component.type_name;
+            match self.components.entry(unique_id) {
+                // if it is already occupied then it could be added to a list
+                Entry::Occupied(mut o) => {
+                    let value = o.get_mut();
+                    match value {
+                        SingleOrList::Single(item) => {
+                            // If the item is a single item then check if the item is dynamic meaning it can be a list
+                            if !item.is_dynamic {
+                                if cfg!(debug_assertions) { // give more informative error when in debug
+                                    #[cfg(debug_assertions)]
+                                    panic!("You are trying to register the type '{}'. But that type has already been registered or a type with a similar id has already been added. The type that was already added is: '{}'. If these types do not match, that means that you has a id collision.", type_name, item.type_name);
+                                } else {
+                                    panic!("The type you are trying to register has already been registered.");
+                                }
                             }
-                        }
 
-                        let temp_component = ContainerComponent {
-                            create_or_clone: CreateOrClone::Empty,
-                            is_dynamic: false,
-                            #[cfg(debug_assertions)]
-                            type_name: "",
-                        };
-                        let old_value = mem::replace(item, temp_component);
-                        *value = SingleOrList::List(vec![old_value, container_component]);
-                    },
-                    SingleOrList::List(items) => {
-                        // if the item is already a list then that means the type is dynamic and it can be added
-                        items.push(container_component);
+                            let temp_component = ContainerComponent {
+                                create_or_clone: CreateOrClone::Empty,
+                                is_dynamic: false,
+                                unique_id,
+                                #[cfg(debug_assertions)]
+                                type_name: "",
+                            };
+                            let old_value = mem::replace(item, temp_component);
+                            *value = SingleOrList::List(vec![old_value, component]);
+                        },
+                        SingleOrList::List(items) => {
+                            // if the item is already a list then that means the type is dynamic and it can be added
+                            items.push(component);
+                        }
                     }
+                },
+                // If no item has been added then add it.
+                Entry::Vacant(v) => {
+                    v.insert(SingleOrList::Single(component));
                 }
-            },
-            // If no item has been added then add it.
-            Entry::Vacant(v) => {
-                v.insert(SingleOrList::Single(container_component));
             }
         }
     }
 
-    pub fn get<T : 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
-        self.get_underlying(TypeId::of::<T>(), type_name::<T>())
-            .map(|x| {
-                InjectorLock {
-                    value: match x {
-                        SingleOrList::Single(value) => value.create_or_clone.create_or_clone::<T>(injector),
-                        SingleOrList::List(_) => unreachable!("A non dynamic type should not be a list type."),
-                    }
-                }
-            })
-    }
-
-    pub fn get_dyn<T : ?Sized + 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
+    pub fn get<T : ?Sized + 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| {
                 InjectorLock {
@@ -235,26 +226,42 @@ pub(crate) struct ContainerComponent {
     create_or_clone: CreateOrClone,
     is_dynamic: bool,
 
+    unique_id: TypeId,
+
     #[cfg(debug_assertions)]
     type_name: &'static str,
 }
 
-impl From<Component> for ContainerComponent {
-    fn from(component: Component) -> Self {
-        let is_dynamic = component.is_dynamic();
-        #[cfg(debug_assertions)]
-        let type_name = component.type_name();
-        Self {
-            create_or_clone: match component.lifetime() {
-                ComponentLifetime::Singleton =>
-                    CreateOrClone::Singleton(CreateOrCloneSingleton::new(component.into_create_func())),
-                ComponentLifetime::Transient =>
-                    CreateOrClone::Transient(CreateOrCloneTransient::new(component.into_create_func())),
-            },
-            is_dynamic,
-            #[cfg(debug_assertions)]
-            type_name,
+impl Into<Vec<ContainerComponent>> for Component {
+    fn into(self) -> Vec<ContainerComponent> {
+        let mut components = Vec::with_capacity(1 + self.dynamics.len());
+
+        components
+            .push(ContainerComponent {
+                create_or_clone: match self.lifetime {
+                    ComponentLifetime::Singleton => CreateOrClone::Singleton(CreateOrCloneSingleton::new(self.create_func)),
+                    ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(self.create_func))
+                },
+                is_dynamic: false,
+                unique_id: self.unique_id,
+                #[cfg(debug_assertions)]
+                type_name: self.type_name,
+            });
+        
+        for dynamic_component in self.dynamics {
+            components.push(ContainerComponent {
+                create_or_clone: match self.lifetime {
+                    ComponentLifetime::Singleton => CreateOrClone::Singleton(CreateOrCloneSingleton::new(dynamic_component.create_func)),
+                    ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(dynamic_component.create_func))
+                },
+                is_dynamic: true,
+                unique_id: dynamic_component.unique_id,
+                #[cfg(debug_assertions)]
+                type_name: dynamic_component.type_name,
+            });
         }
+        
+        components
     }
 }
 

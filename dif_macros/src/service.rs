@@ -1,7 +1,7 @@
 use crate::helpers::{get_associated_generic_type, get_generic_type, get_iterator_impl, get_method, match_path_type, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::{FnArg, ImplItem, Pat, PatType, Type};
+use syn::{FnArg, ImplItem, Pat, PatType};
 use syn::__private::TokenStream2;
 
 pub struct Service {
@@ -131,18 +131,9 @@ fn arg_to_injection(arg: &FnArg) -> TokenStream2 {
                 let injection_type = get_generic_type(ty, "dif::sync::InjectorLock<T>");
 
                 match injection_type {
-                    Ok(t) => match t {
-                        Type::Path(injection_type) => {
-                            quote!(let #name = injector.get::<#injection_type>().expect(concat!("The type '", stringify!(#injection_type), "' has not been added as a service."));)
-                                .into()
-                        }
-                        Type::TraitObject(dyn_type) => {
-                            quote!(let #name = injector.get_dyn::<#dyn_type>().expect(concat!("The type '", stringify!(#dyn_type), "' has not been added as a service."));)
-                                .into()
-                        }
-                        ty => syn::Error::new(ty.span(), "The injected type must be a path or trait object.")
-                            .to_compile_error().into()
-                    },
+                    Ok(t) =>
+                        (quote!(let #name = injector.get::<#t>().expect(concat!("The type '", stringify!(#t), "' has not been added as a service."));))
+                            .into(),
                     Err(e) => e.to_compile_error().into()
                 }
             } else if let Some(result) = get_iterator_impl(ty) {
@@ -201,8 +192,8 @@ impl ToTokens for DynamicInjectableImpl<'_> {
         
         let tree = quote! {
             impl #generics dif::DynamicInjectable<dyn #_trait #types> for #ty {
-                fn into_dynamic(self) -> std::sync::Arc<dif::sync::LockOrCell<dyn #_trait #types>> {
-                    std::sync::Arc::new(dif::sync::LockOrCell::new(self))
+                fn create_dynamic(s: std::sync::Arc<dif::sync::LockOrCell<Self>>) -> std::sync::Arc<dif::sync::LockOrCell<dyn #_trait #types>> {
+                    s.clone() as std::sync::Arc<dif::sync::LockOrCell<dyn #_trait #types>>
                 }
             }
         };

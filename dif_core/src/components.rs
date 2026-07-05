@@ -1,7 +1,7 @@
 use crate::cell::InstanceCell;
 use crate::sync::{LockOrCell, SendTrait};
 use crate::Injector;
-use std::any::TypeId;
+use std::any::{type_name, TypeId};
 use std::sync::Arc;
 use crate::container::DynInstanceCellFn;
 
@@ -13,7 +13,7 @@ pub trait FromInjector {
 }
 
 pub trait DynamicInjectable<T : Injectable + ?Sized> : FromInjector + SendTrait + 'static {
-    fn into_dynamic(self) -> Arc<LockOrCell<T>>;
+    fn create_dynamic(s: Arc<LockOrCell<Self>>) -> Arc<LockOrCell<T>>;
 }
 
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
@@ -23,14 +23,23 @@ pub enum ComponentLifetime {
     Transient
 }
 
+pub struct DynamicComponent {
+    pub(crate) create_func: Box<DynInstanceCellFn>,
+    pub(crate) unique_id: TypeId,
+
+    #[cfg(debug_assertions)]
+    pub(crate) type_name: &'static str,
+}
+
 pub struct Component {
-    lifetime: ComponentLifetime,
-    create_func: Box<DynInstanceCellFn>,
-    unique_id: TypeId,
-    is_dynamic: bool,
+    pub(crate) lifetime: ComponentLifetime,
+    pub(crate) create_func: Box<DynInstanceCellFn>,
+    pub(crate) unique_id: TypeId,
+
+    pub(crate) dynamics: Vec<DynamicComponent>,
     
     #[cfg(debug_assertions)]
-    type_name: &'static str,
+    pub(crate) type_name: &'static str,
 }
 
 impl Component {
@@ -41,30 +50,21 @@ impl Component {
     pub fn unique_id(&self) -> TypeId {
         self.unique_id
     }
-    
-    pub fn is_dynamic(&self) -> bool {
-        self.is_dynamic
-    }
-    
-    pub fn into_create_func(self) -> Box<DynInstanceCellFn> {
-        self.create_func
-    }
-    
+}
+
+struct ComponentBuilderDynItem {
+    create_func: fn(&Injector) -> InstanceCell,
+    unique_id: TypeId,
+
     #[cfg(debug_assertions)]
-    pub fn type_name(&self) -> &'static str {
-        self.type_name
-    }
+    type_name: &'static str,
 }
 
 pub struct ComponentBuilder<T> {
     lifetime: ComponentLifetime,
     create_func: fn(&Injector) -> T,
-    dyn_create_func: Option<fn(&Injector, fn(&Injector) -> T) -> InstanceCell>,
-    unique_id: Option<TypeId>,
-    is_dynamic: bool,
     
-    #[cfg(debug_assertions)]
-    type_name: &'static str,
+    dynamics: Vec<ComponentBuilderDynItem>,
 }
 
 impl Component {
@@ -72,11 +72,7 @@ impl Component {
         ComponentBuilder {
             lifetime: ComponentLifetime::Singleton,
             create_func: T::from_injector,
-            dyn_create_func: None,
-            unique_id: Some(TypeId::of::<T>()),
-            is_dynamic: false,
-            #[cfg(debug_assertions)]
-            type_name: std::any::type_name::<T>(),
+            dynamics: Vec::new(),
         }
     }
 
@@ -84,24 +80,7 @@ impl Component {
         ComponentBuilder {
             lifetime: ComponentLifetime::Transient,
             create_func: T::from_injector,
-            dyn_create_func: None,
-            unique_id: Some(TypeId::of::<T>()),
-            is_dynamic: false,
-            #[cfg(debug_assertions)]
-            type_name: std::any::type_name::<T>(),
-        }
-    }
-    
-    /// Make sure that if you call this function you always call the into_dynamic function to set the unique_id
-    pub(crate) fn with_no_id<T : FromInjector>(lifetime: ComponentLifetime) -> ComponentBuilder<T> {
-        ComponentBuilder {
-            lifetime,
-            create_func: T::from_injector,
-            dyn_create_func: None,
-            unique_id: None,
-            is_dynamic: false,
-            #[cfg(debug_assertions)]
-            type_name: std::any::type_name::<T>(),
+            dynamics: Vec::new(),
         }
     }
 }
@@ -111,44 +90,53 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
         Self {
             lifetime: self.lifetime,
             create_func: factory,
-            dyn_create_func: None,
-            unique_id: self.unique_id,
-            is_dynamic: self.is_dynamic,
-            #[cfg(debug_assertions)]
-            type_name: self.type_name,
+            dynamics: Vec::new(),
         }
     }
 
-    pub fn into_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
+    pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
         where T : DynamicInjectable<TDyn>
     {
+        let mut dynamics = self.dynamics;
+        dynamics.push(ComponentBuilderDynItem {
+            create_func: |injector| {
+                let value = injector.get::<T>()
+                    .expect("This should not be called before T gets inserted into the injector");
+                let value = T::create_dynamic(value.value.clone());
+                InstanceCell::new(value)
+            },
+            unique_id: TypeId::of::<TDyn>(),
+            #[cfg(debug_assertions)]
+            type_name: std::any::type_name::<TDyn>(),
+        });
         Self {
             lifetime: self.lifetime,
             create_func: self.create_func,
-            dyn_create_func: Some(|injector, create_func| {
-                let dynamic = T::into_dynamic(create_func(injector));
-                InstanceCell::new(dynamic)
-            }),
-            unique_id: Some(TypeId::of::<TDyn>()),
-            is_dynamic: true,
-            #[cfg(debug_assertions)]
-            type_name: std::any::type_name::<TDyn>(),
+            dynamics,
         }
     }
 
     pub fn build(self) -> Component {
         Component {
             lifetime: self.lifetime,
-            create_func: self.dyn_create_func
-                .map(|x| Box::new(move |injector: &Injector| x(injector, self.create_func)) as Box<_>)
-                .unwrap_or_else(|| Box::new(move |injector: &Injector| {
-                    let mutex = Arc::new(LockOrCell::new((self.create_func)(injector)));
-                    InstanceCell::new(mutex)
-                }) as Box<_>),
-            unique_id: self.unique_id.expect("Should never be None here."),
-            is_dynamic: self.is_dynamic,
+            create_func: Box::new(move |injector: &Injector| {
+                let mutex = Arc::new(LockOrCell::new((self.create_func)(injector)));
+                InstanceCell::new(mutex)
+            }) as Box<_>,
+            unique_id: TypeId::of::<T>(),
+            dynamics: self.dynamics
+                .into_iter()
+                .map(|d| {
+                    DynamicComponent {
+                        create_func: Box::new(d.create_func),
+                        unique_id: d.unique_id,
+                        #[cfg(debug_assertions)]
+                        type_name: d.type_name
+                    }
+                })
+                .collect::<Vec<_>>(),
             #[cfg(debug_assertions)]
-            type_name: self.type_name,
+            type_name: type_name::<T>(),
         }
     }
 }

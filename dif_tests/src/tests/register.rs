@@ -37,11 +37,8 @@ pub fn register_singleton_dyn() {
     injector.singleton_dyn::<TestLogger, dyn Logger>();
 
     // Assert
-    let get = injector.get_dyn::<dyn Logger>();
+    let get = injector.get::<dyn Logger>();
     assert!(get.is_some());
-
-    let get = injector.get::<TestLogger>();
-    assert!(get.is_none());
 }
 
 #[test]
@@ -53,11 +50,8 @@ pub fn register_transient_dyn() {
     injector.transient_dyn::<TestLogger, dyn Logger>();
 
     // Assert
-    let get = injector.get_dyn::<dyn Logger>();
+    let get = injector.get::<dyn Logger>();
     assert!(get.is_some());
-
-    let get = injector.get::<TestLogger>();
-    assert!(get.is_none());
 }
 
 #[test]
@@ -110,16 +104,13 @@ pub fn register_component_dynamic() {
     // Act
     injector.component(
         Component::singleton::<TestLogger>()
-            .into_dynamic::<dyn Logger>()
+            .with_dynamic::<dyn Logger>()
             .build()
     );
 
     // Assert
-    let get = injector.get_dyn::<dyn Logger>();
+    let get = injector.get::<dyn Logger>();
     assert!(get.is_some());
-    
-    let get = injector.get::<TestLogger>();
-    assert!(get.is_none());
 }
 
 #[test]
@@ -137,17 +128,14 @@ pub fn register_component_dynamic_with_factory() {
 
                 }
             })
-            .into_dynamic::<dyn Logger>()
+            .with_dynamic::<dyn Logger>()
             .build()
     );
 
     // Assert
-    let get = injector.get_dyn::<dyn Logger>();
+    let get = injector.get::<dyn Logger>();
     assert!(get.is_some());
     assert!(CREATED.load(Ordering::SeqCst));
-
-    let get = injector.get::<TestLogger>();
-    assert!(get.is_none());
 }
 
 #[test]
