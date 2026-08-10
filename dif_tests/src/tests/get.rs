@@ -35,7 +35,7 @@ pub fn get_empty_list() {
     let get = injector.get_list::<dyn Logger>();
 
     // Assert
-    assert!(get.is_none());
+    assert_eq!(get.count(), 0);
 }
 
 #[test]
@@ -156,12 +156,9 @@ pub fn get_singleton_list() {
             let list = injector.get_list::<dyn Logger>();
 
             // Assert
-            assert!(list.is_some());
-
             assert_eq!(INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
             assert_eq!(OTHER_INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
-
-            let list = list.unwrap();
+            
             let count = list.count();
 
             assert_eq!(count, 2, "Should have two items as two were added");
@@ -194,13 +191,10 @@ pub fn get_transient_list() {
         // Assert
         assert_eq!(DROP_COUNT.get(), 0, "Instance should be dropped after the list is dropped.");
         assert_eq!(OTHER_DROP_COUNT.get(), 0, "Instance should be dropped after the list is dropped.");
-        
-        assert!(list.is_some());
 
         assert_eq!(INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
         assert_eq!(OTHER_INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
-
-        let list = list.unwrap();
+        
         let count = list.count();
 
         assert_eq!(count, 2, "Should have two items as two were added");
@@ -230,16 +224,11 @@ pub fn get_singleton_multiple_list() {
             let list2 = injector.get_list::<dyn Logger>();
 
             // Assert
-            assert!(list.is_some());
-            assert!(list2.is_some());
-
             assert_eq!(INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
             assert_eq!(OTHER_INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
-
-            let list = list.unwrap();
+            
             let count = list.count();
             
-            let list2 = list2.unwrap();
             let count2 = list2.count();
 
             assert_eq!(count, 2, "Should have two items as two were added");
@@ -272,16 +261,11 @@ pub fn get_transient_multiple_list() {
         let list2 = injector.get_list::<dyn Logger>();
 
         // Assert
-        assert!(list.is_some());
-        assert!(list2.is_some());
-
         assert_eq!(INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
         assert_eq!(OTHER_INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
-
-        let list = list.unwrap();
+        
         let count = list.count();
-
-        let list2 = list2.unwrap();
+        
         let count2 = list2.count();
 
         assert_eq!(count, 2, "Should have two items as two were added");
@@ -312,16 +296,12 @@ pub fn get_transient_and_singleton_multiple_list() {
             let list2 = injector.get_list::<dyn Logger>();
 
             // Assert
-            assert!(list.is_some());
-            assert!(list2.is_some());
 
             assert_eq!(INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
             assert_eq!(OTHER_INITIALIZE_COUNT.get(), 0, "Should only be initialized once the iterator is iterated through.");
-
-            let list = list.unwrap();
+            
             let count = list.count();
-
-            let list2 = list2.unwrap();
+            
             let count2 = list2.count();
 
             assert_eq!(count, 2, "Should have two items as two were added");

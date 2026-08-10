@@ -3,7 +3,7 @@ mod container;
 pub mod sync;
 pub mod cell;
 
-use crate::container::DIContainer;
+use crate::container::{DIContainer, DependencyIter};
 use crate::sync::{InjectorLock, InstanceCellLock, SendTrait};
 pub use components::*;
 use std::any::{TypeId};
@@ -75,8 +75,8 @@ impl Injector {
     /// // code here...
     /// 
     /// // get the instances
-    /// let loggers = injector.get_list::<dyn Logger>()
-    ///     .unwrap(); // unwrap here as dyn Logger is known to have been registered to the injector
+    /// let loggers = injector.get_list::<dyn Logger>();
+    /// 
     /// for logger in loggers { // loop through all the instances
     ///     let mut logger = logger.lock()
     ///         .await; // get lock to specific instance
@@ -85,7 +85,7 @@ impl Injector {
     ///     logger.write("It worked!");
     /// }
     /// ```
-    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
+    pub fn get_list<T: ?Sized + 'static>(&self) -> DependencyIter<'_, T> {
         self.container.get_list(self)
     }
     

@@ -6,6 +6,7 @@ use std::any::{type_name, TypeId};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -60,6 +61,9 @@ impl DIContainer {
                         SingleOrList::List(items) => {
                             // if the item is already a list then that means the type is dynamic and it can be added
                             items.push(component);
+                        },
+                        SingleOrList::Empty => {
+                            unreachable!("Should never happen as this is only used for the iterator.");
                         }
                     }
                 },
@@ -83,14 +87,21 @@ impl DIContainer {
             })
     }
 
-    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector) -> Option<impl Iterator<Item=InjectorLock<T>> + 'a> {
+    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector) -> DependencyIter<'a, T> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
-            .map(|x| x.iter()
-                .map(|item| InjectorLock {
-                    value: item
-                        .create_or_clone
-                        .create_or_clone::<T>(injector),
-                }))
+            .map(|x| DependencyIter {
+                iterator: x.iter(),
+                injector,
+                phantom: PhantomData,
+            })
+            .unwrap_or(DependencyIter {
+                injector,
+                iterator: SingleOrListIterator {
+                    items: &SingleOrList::Empty,
+                    position: 0,
+                },
+                phantom: PhantomData,
+            })
     }
 
     pub fn get_instance_cell(&self, type_id: TypeId, injector: &Injector) -> Option<InstanceCellLock> {
@@ -165,7 +176,8 @@ impl DIContainer {
 #[derive(Clone, Eq, PartialEq, Debug)]
 enum SingleOrList<T> {
     Single(T),
-    List(Vec<T>)
+    List(Vec<T>),
+    Empty
 }
 
 impl<T> SingleOrList<T> {
@@ -173,6 +185,7 @@ impl<T> SingleOrList<T> {
         match self {
             SingleOrList::Single(item) => item,
             SingleOrList::List(items) => &items[0],
+            SingleOrList::Empty => panic!("No item in list"),
         }
     }
 }
@@ -207,7 +220,8 @@ impl<'a, T> Iterator for SingleOrListIterator<'a, T> {
                 let item = list.get(self.position);
 
                 item
-            }
+            },
+            SingleOrList::Empty => None,
         };
         
         self.position += 1;
@@ -217,8 +231,34 @@ impl<'a, T> Iterator for SingleOrListIterator<'a, T> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self.items {
             SingleOrList::Single(_) => (1, Some(1)),
-            SingleOrList::List(x) => (x.len(), Some(x.len()))
+            SingleOrList::List(x) => (x.len(), Some(x.len())),
+            SingleOrList::Empty => (0, None)
         }
+    }
+}
+
+pub struct DependencyIter<'a, T : ?Sized> {
+    iterator: SingleOrListIterator<'a, ContainerComponent>,
+    injector: &'a Injector,
+    phantom: PhantomData<T>
+}
+
+impl<'a, T : 'static + ?Sized> Iterator for DependencyIter<'a, T> {
+    type Item = InjectorLock<T>;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.iterator.next();
+        
+        next
+            .map(|x| InjectorLock {
+                value: x
+                    .create_or_clone
+                    .create_or_clone::<T>(self.injector),
+            })
+    }
+    
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iterator.size_hint()
     }
 }
 

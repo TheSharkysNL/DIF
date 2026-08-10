@@ -150,7 +150,7 @@ fn arg_to_injection(arg: &FnArg) -> TokenStream2 {
                         };
                         
                         quote! {
-                            let #name = injector.get_list::<#inner_argument>().expect(concat!("The type: ", stringify!(#inner_argument), " could not be resolved from the injection container."));
+                            let #name = injector.get_list::<#inner_argument>();
                         }
                     },
                     Err(error) => error.to_compile_error(),
