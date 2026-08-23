@@ -1,5 +1,5 @@
 use crate::cell::InstanceCell;
-use crate::components::{Component, ComponentLifetime};
+use crate::components::{Component, ComponentCreateFunction, ComponentLifetime};
 use crate::sync::{InjectorLock, InstanceCellLock};
 use crate::Injector;
 use std::any::{type_name, TypeId};
@@ -10,6 +10,8 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
+use rustc_hash::{FxBuildHasher};
+
 #[cfg(any(feature = "multithreaded", feature = "async"))]
 pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell + Send + Sync;
 
@@ -18,7 +20,7 @@ pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell;
 
 #[derive(Default)]
 pub(crate) struct DIContainer {
-    components: HashMap<TypeId, SingleOrList<ContainerComponent>>,
+    components: HashMap<TypeId, SingleOrList<ContainerComponent>, FxBuildHasher>,
     #[cfg(debug_assertions)]
     current_dependency_chain: std::sync::Mutex<Vec<TypeId>>,
     #[cfg(debug_assertions)]
@@ -39,7 +41,7 @@ impl DIContainer {
                     match value {
                         SingleOrList::Single(item) => {
                             // If the item is a single item then check if the item is dynamic meaning it can be a list
-                            if !item.is_dynamic {
+                            if !item.dynamic_id.is_some() {
                                 if cfg!(debug_assertions) { // give more informative error when in debug
                                     #[cfg(debug_assertions)]
                                     panic!("You are trying to register the type '{}'. But that type has already been registered or a type with a similar id has already been added. The type that was already added is: '{}'. If these types do not match, that means that you has a id collision.", type_name, item.type_name);
@@ -50,10 +52,10 @@ impl DIContainer {
 
                             let temp_component = ContainerComponent {
                                 create_or_clone: CreateOrClone::Empty,
-                                is_dynamic: false,
                                 unique_id,
                                 #[cfg(debug_assertions)]
                                 type_name: "",
+                                dynamic_id: None,
                             };
                             let old_value = mem::replace(item, temp_component);
                             *value = SingleOrList::List(vec![old_value, component]);
@@ -115,7 +117,37 @@ impl DIContainer {
             })
     }
 
-    fn get_underlying(&self, type_id: TypeId, #[allow(unused)] type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
+    pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId, injector: &Injector) -> Option<InjectorLock<T>> {
+        self.get_underlying_mapped(TypeId::of::<T>(), type_name::<T>(), |component| 
+            component
+                .and_then(|component| {
+                    match component {
+                        SingleOrList::Single(item) => if item.dynamic_id == Some(type_id) {
+                            Some(item)
+                        } else {
+                            None
+                        },
+                        SingleOrList::List(list) => list
+                            .iter()
+                            .find(|item| item.dynamic_id == Some(type_id)),
+                        SingleOrList::Empty => None,
+                    }
+                })
+        )
+        .map(|component| {
+            InjectorLock {
+                value: component
+                    .create_or_clone
+                    .create_or_clone::<T>(injector),
+            }
+        })
+    }
+
+    fn get_underlying(&self, type_id: TypeId, type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
+        self.get_underlying_mapped(type_id, type_name, std::convert::identity)
+    }
+
+    fn get_underlying_mapped<'a, F : FnOnce(Option<&'a SingleOrList<ContainerComponent>>) -> T, T>(&'a self, type_id: TypeId, #[allow(unused)] type_name: &'static str, mapper: F) -> CircularDependencyGuard<'a, T> {
         let component = self.components
             .get(&type_id);
 
@@ -138,14 +170,14 @@ impl DIContainer {
                     None
                 }
             };
-            
+
             if let Some(error) = error {
                 panic!("{}", error);
             }
         }
 
         CircularDependencyGuard {
-            value: component,
+            value: mapper(component),
             id: type_id,
             container: self
         }
@@ -264,12 +296,14 @@ impl<'a, T : 'static + ?Sized> Iterator for DependencyIter<'a, T> {
 
 pub(crate) struct ContainerComponent {
     create_or_clone: CreateOrClone,
-    is_dynamic: bool,
 
     unique_id: TypeId,
-
+    
     #[cfg(debug_assertions)]
     type_name: &'static str,
+
+    /// The type id of the underlying type. None if it is not a dyn type.
+    dynamic_id: Option<TypeId>,
 }
 
 impl Into<Vec<ContainerComponent>> for Component {
@@ -282,7 +316,7 @@ impl Into<Vec<ContainerComponent>> for Component {
                     ComponentLifetime::Singleton => CreateOrClone::Singleton(CreateOrCloneSingleton::new(self.create_func)),
                     ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(self.create_func))
                 },
-                is_dynamic: false,
+                dynamic_id: None,
                 unique_id: self.unique_id,
                 #[cfg(debug_assertions)]
                 type_name: self.type_name,
@@ -294,7 +328,7 @@ impl Into<Vec<ContainerComponent>> for Component {
                     ComponentLifetime::Singleton => CreateOrClone::Singleton(CreateOrCloneSingleton::new(dynamic_component.create_func)),
                     ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(dynamic_component.create_func))
                 },
-                is_dynamic: true,
+                dynamic_id: Some(self.unique_id),
                 unique_id: dynamic_component.unique_id,
                 #[cfg(debug_assertions)]
                 type_name: dynamic_component.type_name,
@@ -312,12 +346,12 @@ enum CreateOrClone {
 }
 
 struct CreateOrCloneSingleton {
-    func: Box<DynInstanceCellFn>,
+    func: ComponentCreateFunction,
     value: RwLock<Option<InstanceCell>>,
 }
 
 struct CreateOrCloneTransient {
-    func: Box<DynInstanceCellFn>,
+    func: ComponentCreateFunction,
 }
 
 impl CreateOrClone {
@@ -343,7 +377,7 @@ impl CreateOrClone {
 }
 
 impl CreateOrCloneSingleton {
-    pub fn new(func: Box<DynInstanceCellFn>) -> Self {
+    pub fn new(func: ComponentCreateFunction) -> Self {
         Self { func, value: RwLock::new(None) }
     }
 
@@ -361,7 +395,7 @@ impl CreateOrCloneSingleton {
             }
         }
 
-        let func_value = (self.func)(&injector);
+        let func_value = self.func.call(&injector);
         let clone = func_value.clone();
         {
             let mut guard = self.value.write()
@@ -374,7 +408,7 @@ impl CreateOrCloneSingleton {
 }
 
 impl CreateOrCloneTransient {
-    pub fn new(func: Box<DynInstanceCellFn>) -> Self {
+    pub fn new(func: ComponentCreateFunction) -> Self {
         Self { func }
     }
 
@@ -384,7 +418,7 @@ impl CreateOrCloneTransient {
     }
 
     pub fn create_or_clone_any(&self, injector: &Injector) -> InstanceCell {
-        let func_value = (self.func)(&injector);
+        let func_value = self.func.call(&injector);
         func_value
     }
 }

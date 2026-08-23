@@ -54,13 +54,30 @@ impl Injector {
     /// // use the instance
     /// logger.write("It worked!");
     /// ```
+    ///
+    /// Can also be used to retrieve dynamic instances. This will get the first instance that was added to the injector.
+    ///
+    /// For example:
+    ///
+    /// ```
+    /// // create injector
+    /// let mut injector = Injector::new();
+    ///
+    /// // register type to the injector
+    /// injector.singleton_dyn::<ConsoleLogger, dyn Logger>();
+    /// injector.singleton_dyn::<FileLogger, dyn Logger>();
+    ///
+    /// // retrieve dynamic instance
+    /// let logger = injector.get::<dyn Logger>(); 
+    /// // logger here will be the `ConsoleLogger` type as that is the first instance that was added.
+    /// ```
+    /// 
+    /// If you want to get a specific instance of the dynamic type. You can use injector.get_by_id.
     pub fn get<T : ?Sized + 'static>(&self) -> Option<InjectorLock<T>> {
         self.container.get(self)
     }
 
     /// Gets a thread-safe list of all the `dyn` instances of `T` that have been registered.
-    ///
-    /// Returns `None` if the `T` instances has not been registered.
     ///
     /// # Examples
     /// 
@@ -89,7 +106,13 @@ impl Injector {
         self.container.get_list(self)
     }
     
-    /// Gets an Any type that can be downcast to it's type.
+    /// Gets a dynamic type using its type id. 
+    /// This can be used to retrieve a specific type at runtime.
+    pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId) -> Option<InjectorLock<T>> {
+        self.container.get_by_id(type_id, self)
+    }
+    
+    /// Gets an Any type that can be downcast.
     pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock> {
         self.container.get_instance_cell(type_id, self)
     }

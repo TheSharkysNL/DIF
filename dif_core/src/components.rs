@@ -2,6 +2,7 @@ use crate::cell::InstanceCell;
 use crate::sync::{LockOrCell, SendTrait};
 use crate::Injector;
 use std::any::{type_name, TypeId};
+use std::marker::PhantomData;
 use std::sync::Arc;
 use crate::container::DynInstanceCellFn;
 
@@ -23,17 +24,32 @@ pub enum ComponentLifetime {
     Transient
 }
 
-pub struct DynamicComponent {
-    pub(crate) create_func: Box<DynInstanceCellFn>,
+pub(crate) struct DynamicComponent {
+    pub(crate) create_func: ComponentCreateFunction,
     pub(crate) unique_id: TypeId,
 
     #[cfg(debug_assertions)]
     pub(crate) type_name: &'static str,
 }
 
+pub(crate) enum ComponentCreateFunction {
+    Pointer(fn(&Injector) -> InstanceCell),
+    Boxed(Box<DynInstanceCellFn>)
+}
+
+impl ComponentCreateFunction {
+    pub fn call(&self, injector: &Injector) -> InstanceCell {
+        match self {
+            ComponentCreateFunction::Pointer(p) => p(injector),
+            ComponentCreateFunction::Boxed(b) => b(injector)
+        }
+    }
+}
+
+/// A component that can be added to a Injector
 pub struct Component {
     pub(crate) lifetime: ComponentLifetime,
-    pub(crate) create_func: Box<DynInstanceCellFn>,
+    pub(crate) create_func: ComponentCreateFunction,
     pub(crate) unique_id: TypeId,
 
     pub(crate) dynamics: Vec<DynamicComponent>,
@@ -62,38 +78,65 @@ struct ComponentBuilderDynItem {
 
 pub struct ComponentBuilder<T> {
     lifetime: ComponentLifetime,
-    create_func: fn(&Injector) -> T,
+    factory_func: Option<Box<DynInstanceCellFn>>,
     
     dynamics: Vec<ComponentBuilderDynItem>,
+    phantom: PhantomData<T>,
 }
 
 impl Component {
+    /// Creates a singleton component and returns a component builder.
     pub fn singleton<T : FromInjector + 'static>() -> ComponentBuilder<T> {
         ComponentBuilder {
             lifetime: ComponentLifetime::Singleton,
-            create_func: T::from_injector,
+            factory_func: None,
             dynamics: Vec::new(),
+            phantom: PhantomData,
         }
     }
 
+    /// Creates a transient component and returns a component builder.
     pub fn transient<T : FromInjector  + 'static>() -> ComponentBuilder<T> {
         ComponentBuilder {
             lifetime: ComponentLifetime::Transient,
-            create_func: T::from_injector,
+            factory_func: None,
             dynamics: Vec::new(),
+            phantom: PhantomData,
         }
     }
 }
 
 impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
-    pub fn with_factory(self, factory: fn(&Injector) -> T) -> Self {
+    /// Creates the type using a custom factory function
+    #[cfg(any(feature = "multithreaded", feature = "async"))]
+    pub fn with_factory(self, factory: impl Fn(&Injector) -> T + Send + Sync + 'static) -> Self {
         Self {
             lifetime: self.lifetime,
-            create_func: factory,
+            factory_func: Some(Box::new(move |injector: &Injector| {
+                let mutex = Arc::new(LockOrCell::new(factory(injector)));
+                InstanceCell::new(mutex)
+            }) as Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>),
             dynamics: Vec::new(),
+            phantom: PhantomData,
         }
     }
 
+    #[cfg(not(any(feature = "multithreaded", feature = "async")))]
+    pub fn with_factory(self, factory: impl Fn(&Injector) -> T + 'static) -> Self {
+        Self {
+            lifetime: self.lifetime,
+            factory_func: Some(Box::new(move |injector: &Injector| {
+                let value = factory(injector);
+                InstanceCell::new(Arc::new(LockOrCell::new(value)))
+            }) as Box<_>),
+            dynamics: Vec::new(),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Lets the type T be retrieved via the injector using a dynamic type. Usefull if you want other crates to implement their own special type that will be injected.
+    /// This way you can retrieve the type using injector.get<TDyn>() or injector.get_list<TDyn>().
+    /// Multiple dynamic types can be set.
     pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
         where T : DynamicInjectable<TDyn>
     {
@@ -101,7 +144,7 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
         dynamics.push(ComponentBuilderDynItem {
             create_func: |injector| {
                 let value = injector.get::<T>()
-                    .expect("This should not be called before T gets inserted into the injector");
+                    .expect("This should not panic as T must have been into the injector");
                 let value = T::create_dynamic(value.value.clone());
                 InstanceCell::new(value)
             },
@@ -111,24 +154,29 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
         });
         Self {
             lifetime: self.lifetime,
-            create_func: self.create_func,
+            factory_func: self.factory_func,
             dynamics,
+            phantom: PhantomData,
         }
     }
 
+    /// Creates the component 
     pub fn build(self) -> Component {
         Component {
             lifetime: self.lifetime,
-            create_func: Box::new(move |injector: &Injector| {
-                let mutex = Arc::new(LockOrCell::new((self.create_func)(injector)));
-                InstanceCell::new(mutex)
-            }) as Box<_>,
+            create_func: match self.factory_func {
+                Some(x) => ComponentCreateFunction::Boxed(x),
+                None => ComponentCreateFunction::Pointer(|injector: &Injector| {
+                    let mutex = Arc::new(LockOrCell::new(T::from_injector(injector)));
+                    InstanceCell::new(mutex)
+                }),
+            },
             unique_id: TypeId::of::<T>(),
             dynamics: self.dynamics
                 .into_iter()
                 .map(|d| {
                     DynamicComponent {
-                        create_func: Box::new(d.create_func),
+                        create_func: ComponentCreateFunction::Pointer(d.create_func),
                         unique_id: d.unique_id,
                         #[cfg(debug_assertions)]
                         type_name: d.type_name

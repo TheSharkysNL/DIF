@@ -1,5 +1,6 @@
+use std::any::TypeId;
 use dif::Injector;
-use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT};
+use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING};
 
 #[test]
 pub fn get_empty() {
@@ -319,3 +320,56 @@ pub fn get_transient_and_singleton_multiple_list() {
     assert_eq!(OTHER_DROP_COUNT.get(), 2, "Instance should be dropped after the list is dropped.");
 }
 
+#[test]
+pub fn get_by_id_test_logger() {
+    // Arrange
+    let mut injector = Injector::new();
+
+    injector.singleton_dyn::<TestLogger, dyn Logger>();
+    injector.transient_dyn::<AnotherLogger, dyn Logger>();
+
+    reset();
+
+    // Act
+    let logger = injector.get_by_id::<dyn Logger>(TypeId::of::<TestLogger>());
+    
+    // Assert
+    assert!(logger.is_some());
+    assert_eq!(INITIALIZE_COUNT.get(), 1, "Should have gotten the TestLogger.");
+    assert_eq!(OTHER_INITIALIZE_COUNT.get(), 0, "Should have gotten the TestLogger.");
+    
+    let logger = logger.unwrap();
+    let mut logger = logger.lock()
+        .unwrap();
+    
+    logger.write("Test");
+    
+    assert_eq!(WRITTEN_STRING.take(), "Test");
+}
+
+#[test]
+pub fn get_by_id_another_logger() {
+    // Arrange
+    let mut injector = Injector::new();
+
+    injector.singleton_dyn::<TestLogger, dyn Logger>();
+    injector.transient_dyn::<AnotherLogger, dyn Logger>();
+
+    reset();
+
+    // Act
+    let logger = injector.get_by_id::<dyn Logger>(TypeId::of::<AnotherLogger>());
+
+    // Assert
+    assert!(logger.is_some());
+    assert_eq!(INITIALIZE_COUNT.get(), 0, "Should have gotten the AnotherLogger.");
+    assert_eq!(OTHER_INITIALIZE_COUNT.get(), 1, "Should have gotten the AnotherLogger.");
+
+    let logger = logger.unwrap();
+    let mut logger = logger.lock()
+        .unwrap();
+
+    logger.write("Test");
+
+    assert_eq!(WRITTEN_STRING.take(), "");
+}
