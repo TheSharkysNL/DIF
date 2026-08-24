@@ -12,9 +12,10 @@ type DynAny = dyn Any + Send;
 #[cfg(not(any(feature = "multithreaded", feature = "async")))]
 type DynAny = dyn Any;
 
+/// Contains an instance of a dependency. 
+/// Can be downcast to a type using the `.get::<T>()` function.
 #[derive(Clone)]
-pub struct InstanceCell {
-    #[cfg(debug_assertions)]
+pub(crate) struct InstanceCell {
     type_id: TypeId,
     instance: ManuallyDrop<Arc<LockOrCell<DynAny>>>,
     _drop: unsafe fn(&mut Arc<LockOrCell<DynAny>>),
@@ -31,7 +32,6 @@ impl InstanceCell {
             let _drop_fn = mem::transmute::<_, unsafe fn(&mut Arc<LockOrCell<DynAny>>)>(drop_in_place::<Arc<LockOrCell<T>>> as *const ());
             let instance = ManuallyDrop::new(into_any(&instance).clone());
             InstanceCell {
-                #[cfg(debug_assertions)]
                 type_id: TypeId::of::<T>(),
                 instance,
                 _drop: _drop_fn
@@ -39,17 +39,37 @@ impl InstanceCell {
         }
     }
     
-    pub fn get<T : ?Sized + 'static>(&self) -> Arc<LockOrCell<T>> {
-        #[cfg(debug_assertions)]
-        if self.type_id != TypeId::of::<T>() {
-            let type_name = type_name::<T>();
-            panic!("Invalid type of T given. Cannot convert this instance cell into the type of '{}'.", type_name);
+    /// Downcasts the instance to the type of `T` if possible else it will return a None value.
+    /// 
+    /// # Examples
+    /// ```rust
+    /// // create injector
+    /// let mut injector = Injector::new();
+    ///     
+    /// injector.singleton::<StdLogger>();
+    ///     
+    /// // get logger
+    /// let logger = injector.get_any(TypeId::of::<StdLogger>());
+    ///     
+    /// assert!(logger.is_some());
+    /// let logger = logger.unwrap();
+    /// // downcast
+    /// let logger = logger.get::<StdLogger>();
+    /// ```
+    pub fn get<T : ?Sized + 'static>(&self) -> Option<Arc<LockOrCell<T>>> {
+        if !self.is::<T>() {
+            return None;
         }
         
         let value = &self.instance;
         unsafe {
-            from_any(value).clone()
+            Some(from_any(value).clone())
         }
+    }
+    
+    /// Checks if the underlying value has the type of `T`.
+    pub fn is<T : ?Sized + 'static>(&self) -> bool {
+        self.type_id == TypeId::of::<T>()
     }
 }
 

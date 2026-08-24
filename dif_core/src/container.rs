@@ -384,6 +384,7 @@ impl CreateOrCloneSingleton {
     pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
         let value = self.create_or_clone_any(&injector);
         value.get()
+            .expect("Invalid T given cannot create singleton.")
     }
 
     pub fn create_or_clone_any(&self, injector: &Injector) -> InstanceCell {
@@ -415,6 +416,7 @@ impl CreateOrCloneTransient {
     pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
         let value = self.create_or_clone_any(&injector);
         value.get()
+            .expect("Invalid T given cannot create transient.")
     }
 
     pub fn create_or_clone_any(&self, injector: &Injector) -> InstanceCell {

@@ -1,26 +1,36 @@
 use crate::cell::InstanceCell;
 use crate::sync::{LockOrCell, SendTrait};
 use crate::Injector;
-use std::any::{type_name, TypeId};
+#[cfg(debug_assertions)]
+use std::any::type_name;
+use std::any::TypeId;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use crate::container::DynInstanceCellFn;
 
+/// A marker trait used to show that a type can be injected.
 pub trait Injectable : SendTrait + 'static {
 }
 
+/// Used to create types for the injector.
 pub trait FromInjector {
+    /// Create Self using the `injector`
     fn from_injector(injector: &Injector) -> Self;
 }
 
+/// A dynamic injectable. Used for dyn coercion
 pub trait DynamicInjectable<T : Injectable + ?Sized> : FromInjector + SendTrait + 'static {
+    /// Used to create a dynamic instance from the Self type.
     fn create_dynamic(s: Arc<LockOrCell<Self>>) -> Arc<LockOrCell<T>>;
 }
 
+/// The lifetime of a component. Can be either a singleton or transient. 
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ComponentLifetime {
+    /// Creates one single instance of the type.
     #[default]
     Singleton,
+    /// Creates a new instance of the type each time it is retrieved.
     Transient
 }
 
@@ -46,7 +56,7 @@ impl ComponentCreateFunction {
     }
 }
 
-/// A component that can be added to a Injector
+/// A component that can be added to a Injector.
 pub struct Component {
     pub(crate) lifetime: ComponentLifetime,
     pub(crate) create_func: ComponentCreateFunction,
@@ -59,10 +69,12 @@ pub struct Component {
 }
 
 impl Component {
+    /// Returns the lifetime of the component
     pub fn lifetime(&self) -> ComponentLifetime {
         self.lifetime
     }
     
+    /// Returns the unique id/TypeId of the type.
     pub fn unique_id(&self) -> TypeId {
         self.unique_id
     }
@@ -76,6 +88,7 @@ struct ComponentBuilderDynItem {
     type_name: &'static str,
 }
 
+/// A builder for creating the component for the type `T`. Can be initialized via the `Component`'s methods.
 pub struct ComponentBuilder<T> {
     lifetime: ComponentLifetime,
     factory_func: Option<Box<DynInstanceCellFn>>,
@@ -121,6 +134,7 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
         }
     }
 
+    /// Creates the type using a custom factory function
     #[cfg(not(any(feature = "multithreaded", feature = "async")))]
     pub fn with_factory(self, factory: impl Fn(&Injector) -> T + 'static) -> Self {
         Self {
@@ -135,7 +149,7 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
     }
 
     /// Lets the type T be retrieved via the injector using a dynamic type. Usefull if you want other crates to implement their own special type that will be injected.
-    /// This way you can retrieve the type using injector.get<TDyn>() or injector.get_list<TDyn>().
+    /// This way you can retrieve the type using `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
     /// Multiple dynamic types can be set.
     pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
         where T : DynamicInjectable<TDyn>

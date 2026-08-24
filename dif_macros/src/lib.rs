@@ -22,7 +22,7 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// #[service]
 /// impl ConsoleLogger {
 ///     pub fn new() -> Self {
-///         println!("ConsoleLogger intialized"); // print out when the logger is initialized
+///         println!("ConsoleLogger initialized"); // print out when the logger is initialized
 ///         Self {
 ///         }
 ///     }

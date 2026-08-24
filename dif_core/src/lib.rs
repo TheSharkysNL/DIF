@@ -1,21 +1,21 @@
 mod components;
 mod container;
 pub mod sync;
-pub mod cell;
+mod cell;
 
 use crate::container::{DIContainer, DependencyIter};
 use crate::sync::{InjectorLock, InstanceCellLock, SendTrait};
 pub use components::*;
 use std::any::{TypeId};
 
-/// The global injector instance
+/// The global injector instance.
 #[cfg(any(feature = "async", feature = "multithreaded"))]
 static INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector { container: DIContainer::default() }));
 
 #[cfg(not(any(feature = "async", feature = "multithreaded")))]
 static mut INJECTOR_INSTANCE: Option<Injector> = None;
 
-/// The main injector used for dependency injection
+/// The main injector used for dependency injection.
 #[derive(Default)]
 pub struct Injector {
     container: DIContainer,
@@ -63,7 +63,7 @@ impl Injector {
     /// // create injector
     /// let mut injector = Injector::new();
     ///
-    /// // register type to the injector
+    /// // register types to the injector
     /// injector.singleton_dyn::<ConsoleLogger, dyn Logger>();
     /// injector.singleton_dyn::<FileLogger, dyn Logger>();
     ///
@@ -108,11 +108,26 @@ impl Injector {
     
     /// Gets a dynamic type using its type id. 
     /// This can be used to retrieve a specific type at runtime.
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// // create injector
+    /// let mut injector = Injector::new();
+    ///
+    /// // register types to the injector
+    /// injector.singleton_dyn::<ConsoleLogger, dyn Logger>();
+    /// injector.singleton_dyn::<FileLogger, dyn Logger>();
+    ///
+    /// // retrieve dynamic instance by id
+    /// let logger = injector.get_by_id::<dyn Logger>(TypeId::of::<FileLogger>()); 
+    /// // logger here will be the `FileLogger` type as that was requested.
+    /// ```
     pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId) -> Option<InjectorLock<T>> {
         self.container.get_by_id(type_id, self)
     }
     
-    /// Gets an Any type that can be downcast.
+    /// Gets an Any type based on the given TypeId that can be downcast.
     pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock> {
         self.container.get_instance_cell(type_id, self)
     }
@@ -286,11 +301,14 @@ impl Injector {
     ///     Component::transient::<ConsoleLogger>()
     ///         .with_factory(|injector| { // use factory to create the ConsoleLogger instance
     ///             ConsoleLogger {
-    ///                 count: COUNT.fetch_add(0, Ordering::SeqCst)
+    ///                 count: COUNT.fetch_add(1, Ordering::SeqCst)
     ///             }
     ///         })
     ///         .build()
     ///     );
+    /// 
+    ///  injector.get::<ConsoleLogger>(); // Count should not be 1
+    ///  injector.get::<ConsoleLogger>(); // Count should not be 2
     /// ```
     /// 
     /// Create dynamic type 
