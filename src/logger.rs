@@ -5,7 +5,7 @@ use chrono::{Utc};
 
 use dif_core as dif;
 use dif_core::FromInjector;
-use dif_core::sync::InjectorLockDyn;
+use dif_core::sync::InjectorLock;
 
 #[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub enum LogLevel {
@@ -31,12 +31,12 @@ impl Display for LogLevel {
 }
 
 pub struct Logger {
-    children: Vec<InjectorLockDyn<dyn ChildLogger>>,
+    children: Vec<InjectorLock<dyn ChildLogger>>,
 }
 
 #[service]
 impl Logger {
-    pub fn new(children: impl Iterator<Item = InjectorLockDyn<dyn ChildLogger>>) -> Self {
+    pub fn new(children: impl Iterator<Item = InjectorLock<dyn ChildLogger>>) -> Self {
         Self {
             children: children.collect(),
         }
@@ -85,4 +85,23 @@ impl<T : ChildLogger + FromInjector + 'static> ChildLogger for TimedLogger<T> {
         self.inner
             .log(level, &message, error)
     }
+}
+
+pub struct StdLogger {
+    
+}
+
+#[service]
+impl StdLogger {}
+
+#[service]
+impl ChildLogger for StdLogger {
+    fn can_handle(&self, log_level: LogLevel) -> bool {
+        true
+    }
+
+    fn log(&mut self, level: LogLevel, message: &Arguments<'_>, error: &Error) {
+        println!("[{}] {}", level, message);
+    }
+    
 }
