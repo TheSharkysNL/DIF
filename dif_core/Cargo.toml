@@ -2,6 +2,8 @@
 name = "dif_core"
 version = "2.0.0"
 edition = "2024"
+description = "The core backend used by the dif crate"
+license = "MIT"
 
 [features]
 async = ["tokio"]
