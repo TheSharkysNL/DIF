@@ -1,4 +1,4 @@
-use dif::Injector;
+use dil::Injector;
 use crate::dependent_dependencies::{Dependency, Dependent, DEPENDENCY_INITIALIZED, DEPENDENT_INITIALIZED};
 
 #[test]

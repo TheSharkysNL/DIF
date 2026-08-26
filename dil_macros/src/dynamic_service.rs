@@ -19,18 +19,18 @@ impl ToTokens for DynamicService {
         let mut generics = self._trait.generics.clone();
         let ty: Type = parse_quote!(dyn #ident #generics);
         
-        generics.params.push(parse_quote!(Lock : dif::sync::Lock));
+        generics.params.push(parse_quote!(Lock : dil::sync::Lock));
         
         // let unique_id_impl = UniqueIdImpl::new(&ty, &self._trait.generics);
         
         let tree = quote! {
             
-            impl #original_generics dif::Injectable for #ty {}
+            impl #original_generics dil::Injectable for #ty {}
             
-            unsafe impl #generics dif::cell::AnyMetadata<Lock> for #ty {
+            unsafe impl #generics dil::cell::AnyMetadata<Lock> for #ty {
                 fn any_vtable(instance: &Lock::Lock<Self>) -> *const () {
                     let raw = Lock::as_raw(instance);
-                    let dif::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute_copy(&raw) };
+                    let dil::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute_copy(&raw) };
                     vtable
                 }
             }

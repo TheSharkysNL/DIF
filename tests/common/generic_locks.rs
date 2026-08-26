@@ -2,9 +2,9 @@ use generic_tests::define;
 
 #[define]
 mod tests {
-    use dif_core::Injector;
-    use dif_core::sync::{Lock, LockBound, Lockable};
-    use dif::sync::{Mutex, RwLock, RefCell};
+    use dil::Injector;
+    use dil::sync::{Lock, LockBound, Lockable};
+    use dil::sync::{Mutex, RwLock, RefCell};
     use crate::injectables::{LoggerUser, TestLogger};
     #[test]
     fn add_and_get<L : Lock + LockBound<TestLogger> + LockBound<LoggerUser<L>> + 'static>() 

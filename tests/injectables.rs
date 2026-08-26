@@ -1,9 +1,9 @@
 use std::any::TypeId;
-pub use dif::service;
-use dif::{dynamic_service};
+pub use dil::service;
+use dil::{dynamic_service};
 use std::cell::{Cell, RefCell};
-use dif_core::sync::{Lock, Lockable};
-use dif_macros::Service;
+use dil::sync::{Lock, Lockable};
+use dil::Service;
 
 thread_local! {
     pub static INITIALIZE_COUNT: Cell<u32> = Cell::new(0);

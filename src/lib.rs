@@ -1,4 +1,4 @@
-pub use dif_core::*;
+pub use dil_core::*;
 
 #[cfg(feature = "macros")]
-pub use dif_macros::*;
+pub use dil_macros::*;

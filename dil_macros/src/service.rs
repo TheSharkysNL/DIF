@@ -154,15 +154,15 @@ impl ToTokens for FromInjectorImpl<'_> {
         let lock_type = match lock_type {
             Some(lock_type) => lock_type.clone(),
             None => {
-                generics.params.push(parse_quote!(Lock : dif::sync::Lock));
+                generics.params.push(parse_quote!(Lock : dil::sync::Lock));
                 
                 parse_quote!(Lock)
             }
         };
 
         let tree = quote! {
-            impl #generics dif::FromInjector<#lock_type> for #ty {
-                fn from_injector(injector: &dif::Injector<#lock_type>) -> Self {
+            impl #generics dil::FromInjector<#lock_type> for #ty {
+                fn from_injector(injector: &dil::Injector<#lock_type>) -> Self {
                     #(#injections)*
                     
                     #body
@@ -180,7 +180,7 @@ impl ToTokens for DynamicInjectableImpl<'_> {
         let _trait = &_trait.1;
         let ty = self.item_impl.self_ty.as_ref();
         let mut generics = self.generics.clone();
-        generics.params.push(parse_quote!(Lock : dif::sync::Lock));
+        generics.params.push(parse_quote!(Lock : dil::sync::Lock));
         
         let types = self.item_impl.items
             .iter()
@@ -203,13 +203,13 @@ impl ToTokens for DynamicInjectableImpl<'_> {
         
         let tree = quote! {                
             #[allow(unsafe_code)]
-            impl #generics dif::DynamicInjectable<dyn #_trait #types, Lock> for #ty {
+            impl #generics dil::DynamicInjectable<dyn #_trait #types, Lock> for #ty {
                 fn create_dynamic(s: Lock::Lock<Self>) -> Lock::Lock<dyn #_trait #types> {
                     let dangling: *const Self = std::ptr::NonNull::dangling().as_ptr();
                     let fat_ptr = dangling as *const dyn #_trait #types;
-                    let dif::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute(fat_ptr) };
+                    let dil::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute(fat_ptr) };
                     
-                    unsafe { dif::sync::coerce::<Lock, _, _>(s, vtable) }
+                    unsafe { dil::sync::coerce::<Lock, _, _>(s, vtable) }
                 }
             }
         };
@@ -231,7 +231,7 @@ impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
                         .take(s.position);
                     
                     
-                    (s.ty.as_ref().clone(), match_path("dif::sync::Lock", range))
+                    (s.ty.as_ref().clone(), match_path("dil::sync::Lock", range))
                 },
                 None => {
                     let first_segment = path.path.segments.first();
@@ -246,7 +246,7 @@ impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
                                             .iter()
                                             .find(|bound| match bound {
                                                 TypeParamBound::Trait(_trait) => {
-                                                    match_path("dif::sync::Lock", _trait.path.segments.iter())
+                                                    match_path("dil::sync::Lock", _trait.path.segments.iter())
                                                 },
                                                 _ => false,
                                             });

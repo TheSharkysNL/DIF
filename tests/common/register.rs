@@ -3,12 +3,12 @@ use generic_tests::define;
 #[define]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
-    use dif::{Component, Injector};
-    use dif::sync::{Mutex, RwLock, RefCell};
+    use dil::{Component, Injector};
+    use dil::sync::{Mutex, RwLock, RefCell};
     #[cfg(feature = "async")]
-    use dif::sync::{AsyncMutex, AsyncRwLock};
-    use dif_core::ComponentLifetime;
-    use dif_core::sync::{Lock, LockBound};
+    use dil::sync::{AsyncMutex, AsyncRwLock};
+    use dil::ComponentLifetime;
+    use dil::sync::{Lock, LockBound};
     use crate::injectables::{AnotherLogger, AnotherService, Logger, TestLogger};
     use std::any::TypeId;
 

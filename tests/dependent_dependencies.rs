@@ -1,6 +1,6 @@
-use dif::service;
+use dil::service;
 use std::cell::Cell;
-use dif_core::sync::{Lock, Mutex};
+use dil::sync::{Lock, Mutex};
 
 thread_local! {
     pub static DEPENDENT_INITIALIZED: Cell<bool> = Cell::new(false);
