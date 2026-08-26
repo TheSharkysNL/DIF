@@ -6,11 +6,21 @@ edition = "2024"
 [features]
 macros = ["dif_macros"]
 async = ["dif_core/async"]
-logger = ["chrono", "anyhow"]
-multithreaded = ["dif_core/multithreaded"]
+test-utils = ["dif_core/test-utils", "macros"]
 
 [dependencies]
 dif_core = { path = "dif_core" }
 dif_macros = { path = "dif_macros", optional = true }
-anyhow = { version =  "1.0.100", optional = true }
-chrono = { version =  "0.4.43", optional = true }
+
+[dev-dependencies]
+criterion = "0.8.2"
+generic-tests = "0.1.3"
+
+[[bench]]
+name = "dif_bench"
+path = "benches/dif_bench.rs"
+harness = false
+
+[workspace]
+resolver = "3"
+members = ["dif_core"]

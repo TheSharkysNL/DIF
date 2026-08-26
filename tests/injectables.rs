@@ -1,6 +1,8 @@
+use std::any::TypeId;
 pub use dif::service;
-use dif::dynamic_service;
+use dif::{dynamic_service};
 use std::cell::{Cell, RefCell};
+use dif_macros::Service;
 
 thread_local! {
     pub static INITIALIZE_COUNT: Cell<u32> = Cell::new(0);
@@ -70,8 +72,12 @@ impl Drop for AnotherLogger {
 }
 
 #[dynamic_service]
-pub trait Logger : Send {
+pub trait Logger : Send + 'static {
     fn write(&mut self, message: &str);
+    
+    fn type_id(&self) -> TypeId {
+        TypeId::of::<Self>()
+    }
 }
 
 #[service]
@@ -85,5 +91,17 @@ impl Logger for AnotherLogger {
 impl Logger for TestLogger {
     fn write(&mut self, message: &str) {
         self.write(message); // call original write
+    }
+}
+
+#[derive(Service)]
+pub struct AnotherService {
+    
+}
+
+#[service]
+impl Logger for AnotherService {
+    fn write(&mut self, _: &str) {
+        // do nothing again
     }
 }

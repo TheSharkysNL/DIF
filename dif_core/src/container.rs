@@ -1,35 +1,32 @@
 use crate::cell::InstanceCell;
 use crate::components::{Component, ComponentCreateFunction, ComponentLifetime};
-use crate::sync::{InjectorLock, InstanceCellLock};
+use crate::sync::{InstanceCellLock, Lock};
 use crate::Injector;
+use rustc_hash::FxBuildHasher;
 use std::any::{type_name, TypeId};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::marker::PhantomData;
 use std::mem;
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock};
-use rustc_hash::{FxBuildHasher};
+use std::ops::{Deref};
+use std::sync::RwLock;
 
-#[cfg(any(feature = "multithreaded", feature = "async"))]
-pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell + Send + Sync;
-
-#[cfg(not(any(feature = "multithreaded", feature = "async")))]
-pub(crate) type DynInstanceCellFn = dyn Fn(&Injector) -> InstanceCell;
+pub(crate) type DynInstanceCellFn<L> = dyn Fn(&Injector<L>) -> InstanceCell<L> + Send + Sync;
 
 #[derive(Default)]
-pub(crate) struct DIContainer {
-    components: HashMap<TypeId, SingleOrList<ContainerComponent>, FxBuildHasher>,
+pub(crate) struct DIContainer<L : Lock> {
+    components: HashMap<TypeId, SingleOrList<ContainerComponent<L>>, FxBuildHasher>,
     #[cfg(debug_assertions)]
     current_dependency_chain: std::sync::Mutex<Vec<TypeId>>,
     #[cfg(debug_assertions)]
     current_dependency_chain_names: std::sync::Mutex<Vec<&'static str>>,
+    phantom: PhantomData<L>,
 }
 
-impl DIContainer {
-    pub fn register(&mut self, component: Component) {
-        let components: Vec<ContainerComponent> = component.into();
+impl<L : Lock> DIContainer<L> {
+    pub fn register(&mut self, component: Component<L>) {
+        let components: Vec<ContainerComponent<L>> = component.into();
         for component in components {
             let unique_id = component.unique_id;
             #[cfg(debug_assertions)]
@@ -77,19 +74,16 @@ impl DIContainer {
         }
     }
 
-    pub fn get<T : ?Sized + 'static>(&self, injector: &Injector) -> Option<InjectorLock<T>> {
+    pub fn get<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> Option<L::Lock<T>> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
-            .map(|x| {
-                InjectorLock {
-                    value: x
-                        .first()
-                        .create_or_clone
-                        .create_or_clone::<T>(injector),
-                }
-            })
+            .map(|x| x
+                .first()
+                .create_or_clone
+                .create_or_clone::<T>(injector)
+            )
     }
 
-    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector) -> DependencyIter<'a, T> {
+    pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector<L>) -> DependencyIter<'a, T, L> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
             .map(|x| DependencyIter {
                 iterator: x.iter(),
@@ -106,18 +100,18 @@ impl DIContainer {
             })
     }
 
-    pub fn get_instance_cell(&self, type_id: TypeId, injector: &Injector) -> Option<InstanceCellLock> {
+    pub fn get_instance_cell(&self, type_id: TypeId, injector: &Injector<L>) -> Option<InstanceCellLock<L>> {
         self.get_underlying(type_id, "")
             .map(|x| {
                 InstanceCellLock {
                     value: x.first()
                         .create_or_clone
-                        .get_instance_cell(injector)
+                        .get_instance_cell(injector),
                 }
             })
     }
 
-    pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId, injector: &Injector) -> Option<InjectorLock<T>> {
+    pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId, injector: &Injector<L>) -> Option<L::Lock<T>> {
         self.get_underlying_mapped(TypeId::of::<T>(), type_name::<T>(), |component| 
             component
                 .and_then(|component| {
@@ -135,19 +129,17 @@ impl DIContainer {
                 })
         )
         .map(|component| {
-            InjectorLock {
-                value: component
-                    .create_or_clone
-                    .create_or_clone::<T>(injector),
-            }
+            component
+                .create_or_clone
+                .create_or_clone::<T>(injector)
         })
     }
 
-    fn get_underlying(&self, type_id: TypeId, type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent>>> {
+    fn get_underlying(&self, type_id: TypeId, type_name: &'static str) -> CircularDependencyGuard<'_, Option<&SingleOrList<ContainerComponent<L>>>, L> {
         self.get_underlying_mapped(type_id, type_name, std::convert::identity)
     }
 
-    fn get_underlying_mapped<'a, F : FnOnce(Option<&'a SingleOrList<ContainerComponent>>) -> T, T>(&'a self, type_id: TypeId, #[allow(unused)] type_name: &'static str, mapper: F) -> CircularDependencyGuard<'a, T> {
+    fn get_underlying_mapped<'a, F : FnOnce(Option<&'a SingleOrList<ContainerComponent<L>>>) -> T, T>(&'a self, type_id: TypeId, #[allow(unused)] type_name: &'static str, mapper: F) -> CircularDependencyGuard<'a, T, L> {
         let component = self.components
             .get(&type_id);
 
@@ -269,24 +261,24 @@ impl<'a, T> Iterator for SingleOrListIterator<'a, T> {
     }
 }
 
-pub struct DependencyIter<'a, T : ?Sized> {
-    iterator: SingleOrListIterator<'a, ContainerComponent>,
-    injector: &'a Injector,
+/// Used for iterating dependencies retrieved from the Injector.
+pub struct DependencyIter<'a, T : ?Sized, L : Lock> {
+    iterator: SingleOrListIterator<'a, ContainerComponent<L>>,
+    injector: &'a Injector<L>,
     phantom: PhantomData<T>
 }
 
-impl<'a, T : 'static + ?Sized> Iterator for DependencyIter<'a, T> {
-    type Item = InjectorLock<T>;
+impl<'a, T : 'static + ?Sized, L : Lock> Iterator for DependencyIter<'a, T, L> {
+    type Item = L::Lock<T>;
     
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iterator.next();
         
         next
-            .map(|x| InjectorLock {
-                value: x
-                    .create_or_clone
-                    .create_or_clone::<T>(self.injector),
-            })
+            .map(|x| x
+                .create_or_clone
+                .create_or_clone::<T>(self.injector)
+            )
     }
     
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -294,8 +286,8 @@ impl<'a, T : 'static + ?Sized> Iterator for DependencyIter<'a, T> {
     }
 }
 
-pub(crate) struct ContainerComponent {
-    create_or_clone: CreateOrClone,
+pub(crate) struct ContainerComponent<L : Lock> {
+    create_or_clone: CreateOrClone<L>,
 
     unique_id: TypeId,
     
@@ -306,8 +298,8 @@ pub(crate) struct ContainerComponent {
     dynamic_id: Option<TypeId>,
 }
 
-impl Into<Vec<ContainerComponent>> for Component {
-    fn into(self) -> Vec<ContainerComponent> {
+impl<L : Lock> Into<Vec<ContainerComponent<L>>> for Component<L> {
+    fn into(self) -> Vec<ContainerComponent<L>> {
         let mut components = Vec::with_capacity(1 + self.dynamics.len());
 
         components
@@ -339,23 +331,23 @@ impl Into<Vec<ContainerComponent>> for Component {
     }
 }
 
-enum CreateOrClone {
-    Singleton(CreateOrCloneSingleton),
-    Transient(CreateOrCloneTransient),
+enum CreateOrClone<L : Lock> {
+    Singleton(CreateOrCloneSingleton<L>),
+    Transient(CreateOrCloneTransient<L>),
     Empty,
 }
 
-struct CreateOrCloneSingleton {
-    func: ComponentCreateFunction,
-    value: RwLock<Option<InstanceCell>>,
+struct CreateOrCloneSingleton<L : Lock> {
+    func: ComponentCreateFunction<L>,
+    value: RwLock<Option<InstanceCell<L>>>,
 }
 
-struct CreateOrCloneTransient {
-    func: ComponentCreateFunction,
+struct CreateOrCloneTransient<L : Lock> {
+    func: ComponentCreateFunction<L>,
 }
 
-impl CreateOrClone {
-    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
+impl<L : Lock> CreateOrClone<L> {
+    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
         match self {
             CreateOrClone::Singleton(item) =>
                 item.create_or_clone(injector),
@@ -365,7 +357,7 @@ impl CreateOrClone {
         }
     }
     
-    pub fn get_instance_cell(&self, injector: &Injector) -> InstanceCell {
+    pub fn get_instance_cell(&self, injector: &Injector<L>) -> InstanceCell<L> {
         match self {
             CreateOrClone::Singleton(item) =>
                 item.create_or_clone_any(injector),
@@ -376,18 +368,18 @@ impl CreateOrClone {
     }
 }
 
-impl CreateOrCloneSingleton {
-    pub fn new(func: ComponentCreateFunction) -> Self {
+impl<L : Lock> CreateOrCloneSingleton<L> {
+    pub fn new(func: ComponentCreateFunction<L>) -> Self {
         Self { func, value: RwLock::new(None) }
     }
 
-    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
+    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
         let value = self.create_or_clone_any(&injector);
         value.get()
             .expect("Invalid T given cannot create singleton.")
     }
 
-    pub fn create_or_clone_any(&self, injector: &Injector) -> InstanceCell {
+    pub fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
         {
             let lock = self.value.read()
                 .unwrap(); // lock should never be poisoned
@@ -408,32 +400,32 @@ impl CreateOrCloneSingleton {
     }
 }
 
-impl CreateOrCloneTransient {
-    pub fn new(func: ComponentCreateFunction) -> Self {
+impl<L : Lock> CreateOrCloneTransient<L> {
+    pub fn new(func: ComponentCreateFunction<L>) -> Self {
         Self { func }
     }
 
-    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector) -> Arc<crate::sync::LockOrCell<T>> {
+    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
         let value = self.create_or_clone_any(&injector);
         value.get()
             .expect("Invalid T given cannot create transient.")
     }
 
-    pub fn create_or_clone_any(&self, injector: &Injector) -> InstanceCell {
+    pub fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
         let func_value = self.func.call(&injector);
         func_value
     }
 }
 
 #[allow(unused)]
-pub(crate) struct CircularDependencyGuard<'a, T> {
-    container: &'a DIContainer,
+pub(crate) struct CircularDependencyGuard<'a, T, L : Lock> {
+    container: &'a DIContainer<L>,
     value: T,
     id: TypeId,
 }
 
 #[cfg(debug_assertions)]
-impl<T> Drop for CircularDependencyGuard<'_, T> {
+impl<T, L : Lock> Drop for CircularDependencyGuard<'_, T, L> {
     fn drop(&mut self) {
         let mut deps = self.container.current_dependency_chain.lock()
             .unwrap();
@@ -449,16 +441,10 @@ impl<T> Drop for CircularDependencyGuard<'_, T> {
     }
 }
 
-impl<T> Deref for CircularDependencyGuard<'_, T> {
+impl<T, L : Lock> Deref for CircularDependencyGuard<'_, T, L> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
         &self.value
-    }
-}
-
-impl<T> DerefMut for CircularDependencyGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
     }
 }

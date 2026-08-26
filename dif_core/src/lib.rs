@@ -3,25 +3,27 @@ mod container;
 pub mod sync;
 mod cell;
 
-use crate::container::{DIContainer, DependencyIter};
-use crate::sync::{InjectorLock, InstanceCellLock, SendTrait};
-pub use components::*;
+use crate::container::DIContainer;
+use crate::sync::{InstanceCellLock, Lock};
 use std::any::{TypeId};
 
-/// The global injector instance.
-#[cfg(any(feature = "async", feature = "multithreaded"))]
-static INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector { container: DIContainer::default() }));
+pub use components::*;
+pub use crate::container::DependencyIter;
 
-#[cfg(not(any(feature = "async", feature = "multithreaded")))]
-static mut INJECTOR_INSTANCE: Option<Injector> = None;
+// /// The global injector instance.
+// #[cfg(any(feature = "async", feature = "multithreaded"))]
+// static INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::Mutex>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector { container: DIContainer::default() }));
+// 
+// #[cfg(not(any(feature = "async", feature = "multithreaded")))]
+// static mut INJECTOR_INSTANCE: Option<Injector> = None;
 
 /// The main injector used for dependency injection.
 #[derive(Default)]
-pub struct Injector {
-    container: DIContainer,
+pub struct Injector<L : Lock> {
+    container: DIContainer<L>,
 }
 
-impl Injector {
+impl<L : Lock> Injector<L> {
     /// Creates a new instance of the injector
     pub fn new() -> Self {
         Self {
@@ -48,8 +50,8 @@ impl Injector {
     /// let logger = injector.get::<ConsoleLogger>()
     /// .unwrap(); // unwrap here as ConsoleLogger is known to have been registered to the injector
     /// let mut logger = logger
-    /// .lock()
-    /// .await; // get lock to the logger
+    ///     .lock()
+    ///     .await; // get lock to the logger
     ///
     /// // use the instance
     /// logger.write("It worked!");
@@ -73,7 +75,7 @@ impl Injector {
     /// ```
     /// 
     /// If you want to get a specific instance of the dynamic type. You can use injector.get_by_id.
-    pub fn get<T : ?Sized + 'static>(&self) -> Option<InjectorLock<T>> {
+    pub fn get<T : ?Sized + 'static>(&self) -> Option<L::Lock<T>> {
         self.container.get(self)
     }
 
@@ -102,7 +104,7 @@ impl Injector {
     ///     logger.write("It worked!");
     /// }
     /// ```
-    pub fn get_list<T: ?Sized + 'static>(&self) -> DependencyIter<'_, T> {
+    pub fn get_list<T: ?Sized + 'static>(&self) -> DependencyIter<'_, T, L> {
         self.container.get_list(self)
     }
     
@@ -123,12 +125,12 @@ impl Injector {
     /// let logger = injector.get_by_id::<dyn Logger>(TypeId::of::<FileLogger>()); 
     /// // logger here will be the `FileLogger` type as that was requested.
     /// ```
-    pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId) -> Option<InjectorLock<T>> {
+    pub fn get_by_id<T: ?Sized + 'static>(&self, type_id: TypeId) -> Option<L::Lock<T>> {
         self.container.get_by_id(type_id, self)
     }
     
     /// Gets an Any type based on the given TypeId that can be downcast.
-    pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock> {
+    pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock<L>> {
         self.container.get_instance_cell(type_id, self)
     }
     
@@ -165,7 +167,7 @@ impl Injector {
     /// // Use dependent below
     /// 
     /// ```
-    pub fn produce<T : FromInjector>(&self) -> T {
+    pub fn produce<T : FromInjector<L>>(&self) -> T {
         T::from_injector(self)
     }
     
@@ -183,7 +185,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.singleton::<ConsoleLogger>();
     /// ```
-    pub fn singleton<T : FromInjector + SendTrait + 'static>(&mut self) {
+    pub fn singleton<T : FromInjector<L> + 'static>(&mut self) {
         self.component(
             Component::singleton::<T>()
                 .build()
@@ -204,7 +206,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.transient::<ConsoleLogger>();
     /// ```
-    pub fn transient<T : FromInjector + SendTrait + 'static>(&mut self) {
+    pub fn transient<T : FromInjector<L> + 'static>(&mut self) {
         self.component(
             Component::transient::<T>()
                 .build()
@@ -233,7 +235,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.singleton_dyn::<dyn Logger>();
     /// ```
-    pub fn singleton_dyn<T : DynamicInjectable<TDyn>, TDyn : Injectable + ?Sized>(&mut self) {
+    pub fn singleton_dyn<T : DynamicInjectable<TDyn, L>, TDyn : Injectable + ?Sized>(&mut self) {
         self.component(
             Component::singleton::<T>()
                 .with_dynamic::<TDyn>()
@@ -264,7 +266,7 @@ impl Injector {
     /// // register type to the injector
     /// injector.transient_dyn::<dyn Logger>();
     /// ```
-    pub fn transient_dyn<T : DynamicInjectable<TDyn>, TDyn : Injectable + ?Sized>(&mut self) {
+    pub fn transient_dyn<T : DynamicInjectable<TDyn, L>, TDyn : Injectable + ?Sized>(&mut self) {
         self.component(
             Component::transient::<T>()
                 .with_dynamic::<TDyn>()
@@ -340,57 +342,57 @@ impl Injector {
     ///  ); // this will use one singular underlying ConsoleLogger type.
     /// ```
     /// 
-    pub fn component(&mut self, component: Component) {
+    pub fn component(&mut self, component: Component<L>) {
         self.container.register(component)
     }
     
-    /// Gets the global injector so services can be retrieved. Can panic if the underlying rwlock was poisoned.
-    #[cfg(any(feature = "async", feature = "multithreaded"))]
-    pub fn global() -> std::sync::RwLockReadGuard<'static, Injector> {
-        INJECTOR_INSTANCE.read()
-            .unwrap()
-    }
+    // /// Gets the global injector so services can be retrieved. Can panic if the underlying rwlock was poisoned.
+    // #[cfg(any(feature = "async", feature = "multithreaded"))]
+    // pub fn global() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::Mutex>> {
+    //     INJECTOR_INSTANCE.read()
+    //         .unwrap()
+    // }
+    // 
+    // /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
+    // #[cfg(any(feature = "async", feature = "multithreaded"))]
+    // pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::Mutex>> {
+    //     INJECTOR_INSTANCE.write()
+    //         .unwrap()
+    // }
 
-    /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
-    #[cfg(any(feature = "async", feature = "multithreaded"))]
-    pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, Injector> {
-        INJECTOR_INSTANCE.write()
-            .unwrap()
-    }
-
-    /// Initially mutates the injector for later use.
-    #[cfg(not(any(feature = "async", feature = "multithreaded")))]
-    #[allow(static_mut_refs)]
-    pub fn initialize<F : FnOnce(&mut Injector)>(init_func: F) {
-        // Safety: The injector instance can only be initialized once and then never be mutated again.
-        // After this you can only get an injector reference to retrieve its services.
-        // Meaning that it cannot be mutated when someone has a reference to it.
-        unsafe {
-            match &mut INJECTOR_INSTANCE {
-                Some(_) => panic!("The injector cannot be initialized more than once."),
-                None => {
-                    let mut new_injector = Injector::new();
-                    init_func(&mut new_injector);
-                    
-                    INJECTOR_INSTANCE = Some(new_injector);
-                }
-            }
-        }
-    }
-
-    /// Gets the global injector so services can be retrieved.
-    #[cfg(not(any(feature = "async", feature = "multithreaded")))]
-    #[allow(static_mut_refs)]
-    pub fn global() -> &'static Injector {
-        // Safety: The injector instance can only be initialized once and then never be mutated again.
-        // After this you can only get an injector reference to retrieve its services.
-        // Meaning that it cannot be mutated when someone has a reference to it.
-        unsafe {
-            match &INJECTOR_INSTANCE {
-                Some(instance) => instance,
-                None => panic!("Injector has not been initialized. Please us the static initialize function to initialize the injector."),
-            }
-        }
-    }
+    // /// Initially mutates the injector for later use.
+    // #[cfg(not(any(feature = "async", feature = "multithreaded")))]
+    // #[allow(static_mut_refs)]
+    // pub fn initialize<F : FnOnce(&mut Injector)>(init_func: F) {
+    //     // Safety: The injector instance can only be initialized once and then never be mutated again.
+    //     // After this you can only get an injector reference to retrieve its services.
+    //     // Meaning that it cannot be mutated when someone has a reference to it.
+    //     unsafe {
+    //         match &mut INJECTOR_INSTANCE {
+    //             Some(_) => panic!("The injector cannot be initialized more than once."),
+    //             None => {
+    //                 let mut new_injector = Injector::new();
+    //                 init_func(&mut new_injector);
+    //                 
+    //                 INJECTOR_INSTANCE = Some(new_injector);
+    //             }
+    //         }
+    //     }
+    // }
+    // 
+    // /// Gets the global injector so services can be retrieved.
+    // #[cfg(not(any(feature = "async", feature = "multithreaded")))]
+    // #[allow(static_mut_refs)]
+    // pub fn global() -> &'static Injector {
+    //     // Safety: The injector instance can only be initialized once and then never be mutated again.
+    //     // After this you can only get an injector reference to retrieve its services.
+    //     // Meaning that it cannot be mutated when someone has a reference to it.
+    //     unsafe {
+    //         match &INJECTOR_INSTANCE {
+    //             Some(instance) => instance,
+    //             None => panic!("Injector has not been initialized. Please us the static initialize function to initialize the injector."),
+    //         }
+    //     }
+    // }
     
 }

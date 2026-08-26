@@ -1,4 +1,4 @@
-use syn::{GenericArgument, ImplItem, ImplItemFn, ItemImpl, PathArguments, ReturnType, Type, TypeParamBound, TraitBound};
+use syn::{GenericArgument, ImplItem, ImplItemFn, ItemImpl, PathArguments, ReturnType, Type, TypeParamBound, TraitBound, PathSegment};
 use syn::spanned::Spanned;
 
 pub fn get_method<'a>(_impl: &'a ItemImpl, name: &str) -> Result<&'a ImplItemFn, syn::Error> {
@@ -27,9 +27,8 @@ pub fn returns_self(func: &ImplItemFn) -> bool {
     }
 }
 
+#[allow(unused)]
 pub fn match_path_type(name: &str, ty: &syn::Type) -> bool {
-    let split = name.split("::").collect::<Vec<_>>();
-
     let segments = match ty {
         syn::Type::Path(path) => {
             &path.path.segments
@@ -37,6 +36,13 @@ pub fn match_path_type(name: &str, ty: &syn::Type) -> bool {
         _ => return false,
     };
 
+    match_path(name, segments.iter())
+}
+
+pub fn match_path<'a>(name: &str, segments: impl Iterator<Item = &'a PathSegment>) -> bool {
+    let split = name.split("::").collect::<Vec<_>>();
+    let segments = segments.collect::<Vec<_>>();
+    
     for (segment_index, segment) in segments.iter().enumerate() {
         for (path_index, path) in split.iter().enumerate() {
             if segment.ident == path {
@@ -62,6 +68,7 @@ pub fn match_path_type(name: &str, ty: &syn::Type) -> bool {
     false
 }
 
+#[allow(unused)]
 pub fn get_generic_type<'a>(ty: &'a syn::Type, name: &str) -> Result<&'a syn::Type, syn::Error> {
     match ty {
         Type::Path(path) => {
@@ -78,7 +85,7 @@ pub fn get_generic_type<'a>(ty: &'a syn::Type, name: &str) -> Result<&'a syn::Ty
     }
 }
 
-fn get_generic_path<'a>(path: &'a syn::Path, name: &str) -> Result<&'a syn::GenericArgument, syn::Error> {
+pub fn get_generic_path<'a>(path: &'a syn::Path, name: &str) -> Result<&'a syn::GenericArgument, syn::Error> {
     let last_segment = path.segments.last().expect("Should not be reachable as match_path_type should have handled this unwrap case.");
     let arguments = &last_segment.arguments;
     match arguments {

@@ -1,7 +1,7 @@
-use crate::helpers::{get_associated_generic_type, get_generic_type, get_iterator_impl, get_method, match_path_type, returns_self};
+use crate::helpers::{get_associated_generic_type, get_generic_path, get_iterator_impl, get_method, match_path, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::{FnArg, ImplItem, Pat, PatType};
+use syn::{parse_quote, Error, FnArg, GenericArgument, ImplItem, Pat, PatType, Type};
 use syn::__private::TokenStream2;
 
 pub struct Service {
@@ -17,6 +17,12 @@ pub struct FromInjectorImpl<'a> {
 pub struct DynamicInjectableImpl<'a> {
     item_impl: &'a syn::ItemImpl,
     generics: &'a syn::Generics,
+}
+
+pub struct ParameterType<'a> {
+    lock_name: Option<&'a Type>,
+    ty: &'a Type,
+    is_iterator: bool,
 }
 
 impl From<syn::ItemImpl> for Service {
@@ -47,10 +53,7 @@ impl ToTokens for Service {
                 generics
             };
             
-            quote! {
-                #from_injector_impl
-                
-            }
+            from_injector_impl.into_token_stream()
         };
         
         let original_impl = &self.item_impl;
@@ -67,9 +70,9 @@ impl ToTokens for Service {
 impl ToTokens for FromInjectorImpl<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let ty = self.ty;
-        let generics = self.generics;
+        let mut generics = self.generics.clone();
         
-        let (body, injections) = if let Some(new_method) = self.new_method {
+        let (body, injections, lock_type) = if let Some(new_method) = self.new_method {
             if !returns_self(new_method) {
                 let error = syn::Error::new(new_method.sig.output.span(), "'new' function must return 'Self'.").to_compile_error();
                 error.to_tokens(tokens);
@@ -90,22 +93,76 @@ impl ToTokens for FromInjectorImpl<'_> {
                     }
                 }
             }
-
+            
+            let mut lock_type = None;
             let injections = new_method.sig.inputs
                 .iter()
-                .map(arg_to_injection)
-                .collect::<Vec<_>>();
+                .map(|arg| match arg {
+                    FnArg::Receiver(_) => Err(Error::new(arg.span(), "Didn't expect the 'self' keyword. The method must be a static method.")),
+                    FnArg::Typed(arg) => {
+                        let result: Result<ParameterType, _> = arg.ty.as_ref().try_into();
+                        
+                        let name = arg.pat.as_ref();
+                        result.and_then(|parameter| {
+                            if (lock_type.is_some() && parameter.lock_name.is_some()) && lock_type.to_token_stream().to_string() != parameter.lock_name.to_token_stream().to_string() {
+                                return Err(Error::new(parameter.lock_name.span(), "Parameter does not use the same lock as the other parameters. All lock types must be the same."))
+                            }
+                            lock_type = parameter.lock_name;
+                            
+                            let ty = parameter.ty;
+                            match (parameter.lock_name, parameter.is_iterator) {
+                                (Some(_), false) => {
+                                    Ok(quote! {
+                                        let #name = injector.get::<#ty>().expect(concat!("The type '", stringify!(#ty), "' has not been added as a service."));
+                                    })
+                                },
+                                (None, false) => {
+                                    Ok(quote! {
+                                        let #name = injector.produce::<#ty>();
+                                    })
+                                },
+                                (Some(_), true) => {
+                                    Ok(quote! {
+                                        let #name = injector.get_list::<#ty>();
+                                    })
+                                },
+                                (None, true) => {
+                                    Err(Error::new(arg.ty.span(), "Iterator must contain a lockable type."))
+                                }
+                            }
+                        })
+                    }
+                })
+                .collect::<Result<Vec<_>, Error>>();
             
-            (block, injections)
+            let injections = match injections {
+                Ok(value) => value,
+                Err(error) => { 
+                    let error = error.to_compile_error();
+                    quote! { #error }.to_tokens(tokens); 
+                    return; 
+                },
+            };
+            
+            (block, injections, lock_type)
         } else {
             (quote! {
                 Self {}
-            }, Vec::new())  
+            }, Vec::new(), None)  
+        };
+        
+        let lock_type = match lock_type {
+            Some(lock_type) => lock_type.clone(),
+            None => {
+                generics.params.push(parse_quote!(Lock : dif::sync::Lock));
+                
+                parse_quote!(Lock)
+            }
         };
 
         let tree = quote! {
-            impl #generics dif::FromInjector for #ty {
-                fn from_injector(injector: &dif::Injector) -> Self {
+            impl #generics dif::FromInjector<#lock_type> for #ty {
+                fn from_injector(injector: &dif::Injector<#lock_type>) -> Self {
                     #(#injections)*
                     
                     #body
@@ -117,59 +174,13 @@ impl ToTokens for FromInjectorImpl<'_> {
     }
 }
 
-fn arg_to_injection(arg: &FnArg) -> TokenStream2 {
-    match arg {
-        FnArg::Receiver(_) => {
-            let error = syn::Error::new(arg.span(), "Didn't expect the 'self' keyword. The method must be a static method.");
-            error.to_compile_error()
-        },
-        FnArg::Typed(arg) => {
-            let name = arg.pat.as_ref();
-            let ty = arg.ty.as_ref();
-            
-            if match_path_type("dif::sync::InjectorLock", ty) {
-                let injection_type = get_generic_type(ty, "dif::sync::InjectorLock<T>");
-
-                match injection_type {
-                    Ok(t) =>
-                        (quote!(let #name = injector.get::<#t>().expect(concat!("The type '", stringify!(#t), "' has not been added as a service."));))
-                            .into(),
-                    Err(e) => e.to_compile_error().into()
-                }
-            } else if let Some(result) = get_iterator_impl(ty) {
-                match result { 
-                    Ok(iterator) => {
-                        let inner_argument = get_associated_generic_type(&iterator.path, "std::iter::Iterator<Item = T>")
-                            .and_then(|x| get_generic_type(x, "dif::sync::InjectorLock<T>"));
-                        
-                        let inner_argument = match inner_argument {
-                            Ok(x) => x,
-                            Err(e) => {
-                                return e.to_compile_error();
-                            }
-                        };
-                        
-                        quote! {
-                            let #name = injector.get_list::<#inner_argument>();
-                        }
-                    },
-                    Err(error) => error.to_compile_error(),
-                }
-            } else {
-                quote! { 
-                    let #name = injector.produce::<#ty>(); 
-                }
-            }
-        }
-    }
-}
-
 impl ToTokens for DynamicInjectableImpl<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let _trait = self.item_impl.trait_.as_ref().unwrap();
         let _trait = &_trait.1;
         let ty = self.item_impl.self_ty.as_ref();
-        let generics = self.generics;
+        let mut generics = self.generics.clone();
+        generics.params.push(parse_quote!(Lock : dif::sync::Lock));
         
         let types = self.item_impl.items
             .iter()
@@ -191,13 +202,87 @@ impl ToTokens for DynamicInjectableImpl<'_> {
         };
         
         let tree = quote! {
-            impl #generics dif::DynamicInjectable<dyn #_trait #types> for #ty {
-                fn create_dynamic(s: std::sync::Arc<dif::sync::LockOrCell<Self>>) -> std::sync::Arc<dif::sync::LockOrCell<dyn #_trait #types>> {
-                    s.clone() as std::sync::Arc<dif::sync::LockOrCell<dyn #_trait #types>>
+            impl #generics dif::DynamicInjectable<dyn #_trait #types, Lock> for #ty {
+                #[allow(unsafe_code)]
+                fn create_dynamic(s: Lock::Lock<Self>) -> Lock::Lock<dyn #_trait #types> {
+                    let dangling: *const Self = std::ptr::NonNull::dangling().as_ptr();
+                    let fat_ptr = dangling as *const dyn #_trait #types;
+                    let dif::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute(fat_ptr) };
+                    
+                    unsafe { dif::sync::coerce::<Lock, #ty, dyn #_trait #types>(s, vtable) }
                 }
             }
         };
         
         tree.to_tokens(tokens);
+    }
+}
+
+impl<'a> TryFrom<&'a Type> for ParameterType<'a> {
+
+    type Error = syn::Error;
+
+    fn try_from(value: &'a Type) -> Result<Self, Self::Error> {
+        if let Type::Path(path) = value {
+            let (lock_type, end_position) = match path.qself.as_ref() {
+                Some(s) => {
+                    (s.ty.as_ref(), s.position)
+                },
+                None => return Ok(Self {
+                        lock_name: None,
+                        ty: value,
+                        is_iterator: false,
+                    }),
+            };
+            
+            let range = path.path.segments
+                .iter()
+                .take(end_position);
+            
+            if !match_path("dif::sync::Lock", range) {
+                return Ok(Self {
+                    lock_name: None,
+                    ty: value,
+                    is_iterator: false,
+                });
+            }
+            
+            let ty = get_generic_path(&path.path, "Lock<T>")?;
+            Ok(Self {
+                lock_name: Some(lock_type),
+                ty: match ty {
+                    GenericArgument::Type(ty) => ty,
+                    generic => return Err(Error::new(generic.span(), "Expected generic type."))
+                },
+                is_iterator: false,
+            })
+        } else if let Some(result) = get_iterator_impl(value) {
+            match result {
+                Ok(iterator) => {
+                    let inner_argument: Result<ParameterType<'a>, _> = get_associated_generic_type(&iterator.path, "std::iter::Iterator<Item = T>")
+                        .and_then(|x| x.try_into());
+
+                    let inner_argument = match inner_argument {
+                        Ok(x) => x,
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    };
+
+                    Ok(Self {
+                        lock_name: inner_argument.lock_name,
+                        ty: inner_argument.ty,
+                        is_iterator: true,
+                    })
+                },
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Self {
+                lock_name: None,
+                ty: value,
+                is_iterator: false,
+            })
+        }
     }
 }

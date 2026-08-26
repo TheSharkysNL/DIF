@@ -3,12 +3,13 @@
 // instead of it pointing to an invalid piece of memory
 
 use dif::Injector;
+use dif::sync::Mutex;
 use crate::injectables::{reset, Logger, TestLogger, WRITTEN_STRING};
 
 #[test]
 pub fn use_logger_instance() {
     // Arrange
-    let mut injector = Injector::new();
+    let mut injector = Injector::<Mutex>::new();
     
     injector.singleton::<TestLogger>();
     
@@ -30,7 +31,7 @@ pub fn use_logger_instance() {
 #[test]
 pub fn use_logger_instance_dynamic() {
     // Arrange
-    let mut injector = Injector::new();
+    let mut injector = Injector::<Mutex>::new();
 
     injector.singleton_dyn::<TestLogger, dyn Logger>();
 

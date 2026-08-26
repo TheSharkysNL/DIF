@@ -4,9 +4,9 @@ version = "1.4.0"
 edition = "2024"
 
 [features]
-async = ["async-std", "multithreaded"]
-multithreaded = []
+async = ["tokio"]
+test-utils = []
 
 [dependencies]
-async-std = { version =  "1.13.2", optional = true }
+tokio = { version = "1.53.1", optional = true, features = ["sync"] }
 rustc-hash = "2.1.3"

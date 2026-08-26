@@ -1,7 +1,0 @@
-[package]
-name = "dif_tests"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-dif = { path = "../../dif", features = ["macros", "multithreaded"] }

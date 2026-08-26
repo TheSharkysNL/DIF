@@ -1,6 +1,6 @@
-use dif::sync::InjectorLock;
 use dif::service;
 use std::cell::Cell;
+use dif_core::sync::{Lock, Mutex};
 
 thread_local! {
     pub static DEPENDENT_INITIALIZED: Cell<bool> = Cell::new(false);
@@ -9,16 +9,17 @@ thread_local! {
 
 pub struct Dependent {
     #[allow(dead_code)]
-    dependency: InjectorLock<Dependency>,
+    dependency: <Mutex as Lock>::Lock<Dependency>,
 }
 
 pub struct Dependency {
-    
+    #[allow(unused)]
+    s: u32
 }
 
 #[service]
 impl Dependent {
-    pub fn new(dependent: InjectorLock<Dependency>) -> Self {
+    pub fn new(dependent: <Mutex as Lock>::Lock<Dependency>) -> Self {
         DEPENDENT_INITIALIZED.replace(true);
         
         Self {
@@ -32,7 +33,9 @@ impl Dependency {
     pub fn new() -> Self {
         DEPENDENCY_INITIALIZED.replace(true);
         
-        Self {}
+        Self {
+            s: 100,
+        }
     }
 }
 
@@ -41,14 +44,15 @@ pub fn reset() {
     DEPENDENCY_INITIALIZED.replace(false);
 }
 
+#[allow(unused)]
 pub struct CircularDependency {
 
 }
 
 #[service]
 impl CircularDependency {
-    #[allow(unused_parens)]
-    pub fn new(_dependency: InjectorLock<CircularDependency>) -> Self {
+    #[allow(unused)]
+    pub fn new(_dependency: <Mutex as Lock>::Lock<CircularDependency>) -> Self {
         Self {}
     }
 }

@@ -2,35 +2,41 @@
 use std::any::{type_name, Any, TypeId};
 use std::mem;
 use std::ptr::drop_in_place;
-use std::sync::Arc;
-use crate::sync::{LockOrCell, SendTrait};
 use std::mem::ManuallyDrop;
+use std::ops::DerefMut;
+use crate::sync::Lock;
 
-#[cfg(any(feature = "multithreaded", feature = "async"))]
-type DynAny = dyn Any + Send;
-
-#[cfg(not(any(feature = "multithreaded", feature = "async")))]
-type DynAny = dyn Any;
+type DynAny = dyn Any + Send + Sync;
 
 /// Contains an instance of a dependency. 
-/// Can be downcast to a type using the `.get::<T>()` function.
-#[derive(Clone)]
-pub(crate) struct InstanceCell {
+/// Can be downcast to a type using the [`Self::get::<T>()`] function.
+pub(crate) struct InstanceCell<L : Lock> {
     type_id: TypeId,
-    instance: ManuallyDrop<Arc<LockOrCell<DynAny>>>,
-    _drop: unsafe fn(&mut Arc<LockOrCell<DynAny>>),
+    instance: ManuallyDrop<L::Lock<DynAny>>,
+    _drop: unsafe fn(&mut L::Lock<DynAny>),
 }
 
-impl InstanceCell {
-    pub(crate) fn new<T : ?Sized + 'static + SendTrait>(instance: Arc<LockOrCell<T>>) -> Self {
+impl<L : Lock> Clone for InstanceCell<L> {
+    fn clone(&self) -> Self {
+        Self {
+            type_id: self.type_id.clone(),
+            instance: self.instance.clone(),
+            _drop: self._drop.clone(),
+        }
+    }
+}
+
+impl<L : Lock> InstanceCell<L> {
+    pub(crate) fn new<T : ?Sized + 'static>(instance: L::Lock<T>) -> Self {
         // Safety: The drop in place fn should be safe to transmute here 
-        // as we are always passing through a &mut Arc<LockOrCell<T>> 
-        // but those bits were transmuted to act like &mut Arc<LockOrCell<DynAny>> using the into_any function
+        // as we are always passing through a &mut L::Lock<T>
+        // but those bits were transmuted to act like &mut L::Lock<T> using the into_any function
         // but passing data through as a reference makes the callee responsible for the type
         // this way we can safely drop the T type, while not holding a generic type reference to T
         unsafe {
-            let _drop_fn = mem::transmute::<_, unsafe fn(&mut Arc<LockOrCell<DynAny>>)>(drop_in_place::<Arc<LockOrCell<T>>> as *const ());
-            let instance = ManuallyDrop::new(into_any(&instance).clone());
+            let _drop_fn = mem::transmute::<_, unsafe fn(&mut L::Lock<DynAny>)>(drop_in_place::<L::Lock<T>> as *const ());
+            
+            let instance = ManuallyDrop::new(into_any::<T, L>(&instance).clone());
             InstanceCell {
                 type_id: TypeId::of::<T>(),
                 instance,
@@ -56,14 +62,14 @@ impl InstanceCell {
     /// // downcast
     /// let logger = logger.get::<StdLogger>();
     /// ```
-    pub fn get<T : ?Sized + 'static>(&self) -> Option<Arc<LockOrCell<T>>> {
+    pub fn get<T : ?Sized + 'static>(&self) -> Option<L::Lock<T>> {
         if !self.is::<T>() {
             return None;
         }
         
         let value = &self.instance;
         unsafe {
-            Some(from_any(value).clone())
+            Some(from_any::<T, L>(value).clone())
         }
     }
     
@@ -73,22 +79,22 @@ impl InstanceCell {
     }
 }
 
-impl Drop for InstanceCell {
+impl<L : Lock> Drop for InstanceCell<L> {
     fn drop(&mut self) {
         unsafe {
-            (self._drop)(&mut self.instance)
+            (self._drop)(self.instance.deref_mut())
         }
     }
 }
 
-unsafe fn from_any<'a, T : ?Sized>(value: &'a Arc<LockOrCell<DynAny>>) -> &'a Arc<LockOrCell<T>> {
-    let any_ptr = value as *const Arc<LockOrCell<DynAny>>;
-    let real_ptr = any_ptr as *const Arc<LockOrCell<T>>;
+unsafe fn from_any<'a, T : ?Sized, L : Lock>(value: &'a L::Lock<DynAny>) -> &'a L::Lock<T> {
+    let any_ptr = value as *const L::Lock<DynAny>;
+    let real_ptr = any_ptr as *const L::Lock<T>;
     unsafe { &*real_ptr }
 }
 
-unsafe fn into_any<'a, T : ?Sized>(value: &'a Arc<LockOrCell<T>>) -> &'a Arc<LockOrCell<DynAny>> {
-    let real_ptr = value as *const Arc<LockOrCell<T>>;
-    let any_ptr = real_ptr as *const Arc<LockOrCell<DynAny>>;
+unsafe fn into_any<'a, T : ?Sized, L : Lock>(value: &'a L::Lock<T>) -> &'a L::Lock<DynAny> {
+    let real_ptr = value as *const L::Lock<T>;
+    let any_ptr = real_ptr as *const L::Lock<DynAny>;
     unsafe { &*any_ptr }
 }

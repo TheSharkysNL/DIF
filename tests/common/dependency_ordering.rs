@@ -2,6 +2,7 @@
 // how the user adds the instances to the injector
 
 use dif::{Component, Injector};
+#[allow(unused_imports)]
 use crate::dependent_dependencies::{reset, CircularDependency, Dependency, Dependent, DEPENDENCY_INITIALIZED, DEPENDENT_INITIALIZED};
 
 #[test]

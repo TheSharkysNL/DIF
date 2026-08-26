@@ -1,27 +1,26 @@
 use crate::cell::InstanceCell;
-use crate::sync::{LockOrCell, SendTrait};
 use crate::Injector;
 #[cfg(debug_assertions)]
 use std::any::type_name;
 use std::any::TypeId;
 use std::marker::PhantomData;
-use std::sync::Arc;
 use crate::container::DynInstanceCellFn;
+use crate::sync::Lock;
 
 /// A marker trait used to show that a type can be injected.
-pub trait Injectable : SendTrait + 'static {
+pub trait Injectable : 'static {
 }
 
 /// Used to create types for the injector.
-pub trait FromInjector {
+pub trait FromInjector<L : Lock> {
     /// Create Self using the `injector`
-    fn from_injector(injector: &Injector) -> Self;
+    fn from_injector(injector: &Injector<L>) -> Self;
 }
 
 /// A dynamic injectable. Used for dyn coercion
-pub trait DynamicInjectable<T : Injectable + ?Sized> : FromInjector + SendTrait + 'static {
+pub trait DynamicInjectable<T : Injectable + ?Sized, L : Lock> : FromInjector<L> + 'static {
     /// Used to create a dynamic instance from the Self type.
-    fn create_dynamic(s: Arc<LockOrCell<Self>>) -> Arc<LockOrCell<T>>;
+    fn create_dynamic(s: L::Lock<Self>) -> L::Lock<T>;
 }
 
 /// The lifetime of a component. Can be either a singleton or transient. 
@@ -34,21 +33,21 @@ pub enum ComponentLifetime {
     Transient
 }
 
-pub(crate) struct DynamicComponent {
-    pub(crate) create_func: ComponentCreateFunction,
+pub(crate) struct DynamicComponent<L : Lock> {
+    pub(crate) create_func: ComponentCreateFunction<L>,
     pub(crate) unique_id: TypeId,
 
     #[cfg(debug_assertions)]
     pub(crate) type_name: &'static str,
 }
 
-pub(crate) enum ComponentCreateFunction {
-    Pointer(fn(&Injector) -> InstanceCell),
-    Boxed(Box<DynInstanceCellFn>)
+pub(crate) enum ComponentCreateFunction<L : Lock> {
+    Pointer(fn(&Injector<L>) -> InstanceCell<L>),
+    Boxed(Box<DynInstanceCellFn<L>>)
 }
 
-impl ComponentCreateFunction {
-    pub fn call(&self, injector: &Injector) -> InstanceCell {
+impl<L : Lock> ComponentCreateFunction<L> {
+    pub fn call(&self, injector: &Injector<L>) -> InstanceCell<L> {
         match self {
             ComponentCreateFunction::Pointer(p) => p(injector),
             ComponentCreateFunction::Boxed(b) => b(injector)
@@ -57,18 +56,18 @@ impl ComponentCreateFunction {
 }
 
 /// A component that can be added to a Injector.
-pub struct Component {
+pub struct Component<L : Lock> {
     pub(crate) lifetime: ComponentLifetime,
-    pub(crate) create_func: ComponentCreateFunction,
+    pub(crate) create_func: ComponentCreateFunction<L>,
     pub(crate) unique_id: TypeId,
 
-    pub(crate) dynamics: Vec<DynamicComponent>,
+    pub(crate) dynamics: Vec<DynamicComponent<L>>,
     
     #[cfg(debug_assertions)]
     pub(crate) type_name: &'static str,
 }
 
-impl Component {
+impl<L : Lock> Component<L> {
     /// Returns the lifetime of the component
     pub fn lifetime(&self) -> ComponentLifetime {
         self.lifetime
@@ -80,8 +79,8 @@ impl Component {
     }
 }
 
-struct ComponentBuilderDynItem {
-    create_func: fn(&Injector) -> InstanceCell,
+struct ComponentBuilderDynItem<L : Lock> {
+    create_func: fn(&Injector<L>) -> InstanceCell<L>,
     unique_id: TypeId,
 
     #[cfg(debug_assertions)]
@@ -89,17 +88,17 @@ struct ComponentBuilderDynItem {
 }
 
 /// A builder for creating the component for the type `T`. Can be initialized via the `Component`'s methods.
-pub struct ComponentBuilder<T> {
+pub struct ComponentBuilder<T, L : Lock> {
     lifetime: ComponentLifetime,
-    factory_func: Option<Box<DynInstanceCellFn>>,
+    factory_func: Option<Box<DynInstanceCellFn<L>>>,
     
-    dynamics: Vec<ComponentBuilderDynItem>,
+    dynamics: Vec<ComponentBuilderDynItem<L>>,
     phantom: PhantomData<T>,
 }
 
-impl Component {
+impl<L : Lock> Component<L> {
     /// Creates a singleton component and returns a component builder.
-    pub fn singleton<T : FromInjector + 'static>() -> ComponentBuilder<T> {
+    pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L> {
         ComponentBuilder {
             lifetime: ComponentLifetime::Singleton,
             factory_func: None,
@@ -109,7 +108,7 @@ impl Component {
     }
 
     /// Creates a transient component and returns a component builder.
-    pub fn transient<T : FromInjector  + 'static>() -> ComponentBuilder<T> {
+    pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L> {
         ComponentBuilder {
             lifetime: ComponentLifetime::Transient,
             factory_func: None,
@@ -119,29 +118,14 @@ impl Component {
     }
 }
 
-impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
+impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
     /// Creates the type using a custom factory function
-    #[cfg(any(feature = "multithreaded", feature = "async"))]
-    pub fn with_factory(self, factory: impl Fn(&Injector) -> T + Send + Sync + 'static) -> Self {
+    pub fn with_factory(self, factory: impl Fn(&Injector<L>) -> T + Send + Sync + 'static) -> Self {
         Self {
             lifetime: self.lifetime,
-            factory_func: Some(Box::new(move |injector: &Injector| {
-                let mutex = Arc::new(LockOrCell::new(factory(injector)));
+            factory_func: Some(Box::new(move |injector: &Injector<L>| {
+                let mutex = L::new(factory(injector));
                 InstanceCell::new(mutex)
-            }) as Box<dyn Fn(&Injector) -> InstanceCell + Send + Sync>),
-            dynamics: Vec::new(),
-            phantom: PhantomData,
-        }
-    }
-
-    /// Creates the type using a custom factory function
-    #[cfg(not(any(feature = "multithreaded", feature = "async")))]
-    pub fn with_factory(self, factory: impl Fn(&Injector) -> T + 'static) -> Self {
-        Self {
-            lifetime: self.lifetime,
-            factory_func: Some(Box::new(move |injector: &Injector| {
-                let value = factory(injector);
-                InstanceCell::new(Arc::new(LockOrCell::new(value)))
             }) as Box<_>),
             dynamics: Vec::new(),
             phantom: PhantomData,
@@ -152,14 +136,14 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
     /// This way you can retrieve the type using `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
     /// Multiple dynamic types can be set.
     pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
-        where T : DynamicInjectable<TDyn>
+        where T : DynamicInjectable<TDyn, L>
     {
         let mut dynamics = self.dynamics;
         dynamics.push(ComponentBuilderDynItem {
             create_func: |injector| {
                 let value = injector.get::<T>()
                     .expect("This should not panic as T must have been into the injector");
-                let value = T::create_dynamic(value.value.clone());
+                let value = T::create_dynamic(value.clone());
                 InstanceCell::new(value)
             },
             unique_id: TypeId::of::<TDyn>(),
@@ -175,13 +159,13 @@ impl<T : FromInjector + 'static + SendTrait> ComponentBuilder<T> {
     }
 
     /// Creates the component 
-    pub fn build(self) -> Component {
+    pub fn build(self) -> Component<L> {
         Component {
             lifetime: self.lifetime,
             create_func: match self.factory_func {
                 Some(x) => ComponentCreateFunction::Boxed(x),
-                None => ComponentCreateFunction::Pointer(|injector: &Injector| {
-                    let mutex = Arc::new(LockOrCell::new(T::from_injector(injector)));
+                None => ComponentCreateFunction::Pointer(|injector: &Injector<L>| {
+                    let mutex = L::new(T::from_injector(injector));
                     InstanceCell::new(mutex)
                 }),
             },
