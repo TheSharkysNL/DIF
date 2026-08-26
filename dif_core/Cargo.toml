@@ -1,8 +1,8 @@
 [package]
-name = "dif_core"
+name = "dil_core"
 version = "2.0.0"
 edition = "2024"
-description = "The core backend used by the dif crate"
+description = "The core backend used by the dil crate"
 license = "MIT"
 
 [features]
