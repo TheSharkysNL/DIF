@@ -15,14 +15,25 @@ impl From<ItemTrait> for DynamicService {
 impl ToTokens for DynamicService {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let ident = &self._trait.ident;
-        let generics = &self._trait.generics;
+        let original_generics = &self._trait.generics;
+        let mut generics = self._trait.generics.clone();
         let ty: Type = parse_quote!(dyn #ident #generics);
+        
+        generics.params.push(parse_quote!(Lock : dif::sync::Lock));
         
         // let unique_id_impl = UniqueIdImpl::new(&ty, &self._trait.generics);
         
         let tree = quote! {
             
-            impl #generics dif::Injectable for #ty {}
+            impl #original_generics dif::Injectable for #ty {}
+            
+            unsafe impl #generics dif::cell::AnyMetadata<Lock> for #ty {
+                fn any_vtable(instance: &Lock::Lock<Self>) -> *const () {
+                    let raw = Lock::as_raw(instance);
+                    let dif::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute_copy(&raw) };
+                    vtable
+                }
+            }
         };
         
         tree.to_tokens(tokens);

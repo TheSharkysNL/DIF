@@ -8,12 +8,12 @@ mod tests {
     #[cfg(feature = "async")]
     use dif::sync::{AsyncMutex, AsyncRwLock};
     use dif_core::ComponentLifetime;
-    use dif_core::sync::Lock;
+    use dif_core::sync::{Lock, LockBound};
     use crate::injectables::{AnotherLogger, AnotherService, Logger, TestLogger};
     use std::any::TypeId;
 
     #[test]
-    pub fn register_singleton<L : Lock>() {
+    pub fn register_singleton<L : Lock + LockBound<TestLogger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -26,7 +26,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_transient<L : Lock>() {
+    pub fn register_transient<L : Lock + LockBound<TestLogger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -39,7 +39,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_singleton_dyn<L : Lock>() {
+    pub fn register_singleton_dyn<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -52,7 +52,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_transient_dyn<L : Lock>() {
+    pub fn register_transient_dyn<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -65,7 +65,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_component<L : Lock>() {
+    pub fn register_component<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -83,7 +83,7 @@ mod tests {
     static CREATED: AtomicBool = AtomicBool::new(false);
 
     #[test]
-    pub fn register_component_with_factory<L : Lock>() {
+    pub fn register_component_with_factory<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
         CREATED.store(false, Ordering::SeqCst);
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_component_dynamic<L : Lock>() {
+    pub fn register_component_dynamic<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -122,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_component_dynamic_with_factory<L : Lock>() {
+    pub fn register_component_dynamic_with_factory<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
         CREATED.store(false, Ordering::SeqCst);
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     #[should_panic]
-    pub fn register_same_instance_multiple_times<L : Lock>() {
+    pub fn register_same_instance_multiple_times<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    pub fn register_instance_three_times<L : Lock>() {
+    pub fn register_instance_three_times<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    pub fn component_lifetime_singleton<L : Lock>() {
+    pub fn component_lifetime_singleton<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger>>() {
         // Arrange
         let component: Component<L> = Component::singleton::<TestLogger>()
             .build();
@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    pub fn component_lifetime_transient<L : Lock>() {
+    pub fn component_lifetime_transient<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let component: Component<L> = Component::transient::<TestLogger>()
             .build();
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    pub fn component_singleton_unique_id<L : Lock>() {
+    pub fn component_singleton_unique_id<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let component: Component<L> = Component::singleton::<TestLogger>()
             .build();
@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    pub fn component_transient_unique_id<L : Lock>() {
+    pub fn component_transient_unique_id<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let component: Component<L> = Component::transient::<TestLogger>()
             .build();

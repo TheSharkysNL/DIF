@@ -1,18 +1,18 @@
-use crate::cell::InstanceCell;
+use crate::cell::{AnyMetadata, InstanceCell};
 use crate::Injector;
 #[cfg(debug_assertions)]
 use std::any::type_name;
 use std::any::TypeId;
 use std::marker::PhantomData;
 use crate::container::DynInstanceCellFn;
-use crate::sync::Lock;
+use crate::sync::{Lock, LockBound};
 
 /// A marker trait used to show that a type can be injected.
 pub trait Injectable : 'static {
 }
 
 /// Used to create types for the injector.
-pub trait FromInjector<L : Lock> {
+pub trait FromInjector<L : Lock> : AnyMetadata<L> {
     /// Create Self using the `injector`
     fn from_injector(injector: &Injector<L>) -> Self;
 }
@@ -98,7 +98,9 @@ pub struct ComponentBuilder<T, L : Lock> {
 
 impl<L : Lock> Component<L> {
     /// Creates a singleton component and returns a component builder.
-    pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L> {
+    pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L>
+        where L : LockBound<T>
+    {
         ComponentBuilder {
             lifetime: ComponentLifetime::Singleton,
             factory_func: None,
@@ -108,7 +110,9 @@ impl<L : Lock> Component<L> {
     }
 
     /// Creates a transient component and returns a component builder.
-    pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L> {
+    pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L>
+        where L : LockBound<T>
+    {
         ComponentBuilder {
             lifetime: ComponentLifetime::Transient,
             factory_func: None,
@@ -135,8 +139,9 @@ impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
     /// Lets the type T be retrieved via the injector using a dynamic type. Usefull if you want other crates to implement their own special type that will be injected.
     /// This way you can retrieve the type using `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
     /// Multiple dynamic types can be set.
-    pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static>(self) -> Self
-        where T : DynamicInjectable<TDyn, L>
+    pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static + AnyMetadata<L>>(self) -> Self
+        where T : DynamicInjectable<TDyn, L>,
+              L : LockBound<TDyn>
     {
         let mut dynamics = self.dynamics;
         dynamics.push(ComponentBuilderDynItem {

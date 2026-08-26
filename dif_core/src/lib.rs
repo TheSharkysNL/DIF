@@ -1,14 +1,32 @@
+#![cfg_attr(doc, feature(doc_cfg))]
+
 mod components;
 mod container;
 pub mod sync;
-mod cell;
+pub mod cell;
 
 use crate::container::DIContainer;
-use crate::sync::{InstanceCellLock, Lock};
+use crate::sync::{InstanceCellLock, Lock, LockBound};
 use std::any::{TypeId};
 
 pub use components::*;
+use crate::cell::AnyMetadata;
 pub use crate::container::DependencyIter;
+
+#[cfg(feature = "globals")]
+static MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::Mutex>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+
+#[cfg(feature = "globals")]
+static RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::RwLock>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+
+#[cfg(feature = "globals")]
+static mut REFCELL_INJECTOR_INSTANCE: Option<Injector<crate::sync::RefCell>> = None;
+
+#[cfg(all(feature = "globals", feature = "async"))]
+static ASYNC_MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncMutex>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+
+#[cfg(all(feature = "globals", feature = "async"))]
+static ASYNC_RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncRwLock>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
 
 // /// The global injector instance.
 // #[cfg(any(feature = "async", feature = "multithreaded"))]
@@ -185,7 +203,9 @@ impl<L : Lock> Injector<L> {
     /// // register type to the injector
     /// injector.singleton::<ConsoleLogger>();
     /// ```
-    pub fn singleton<T : FromInjector<L> + 'static>(&mut self) {
+    pub fn singleton<T : FromInjector<L> + 'static>(&mut self) 
+        where L : LockBound<T>
+    {
         self.component(
             Component::singleton::<T>()
                 .build()
@@ -206,7 +226,9 @@ impl<L : Lock> Injector<L> {
     /// // register type to the injector
     /// injector.transient::<ConsoleLogger>();
     /// ```
-    pub fn transient<T : FromInjector<L> + 'static>(&mut self) {
+    pub fn transient<T : FromInjector<L> + 'static>(&mut self)
+        where L : LockBound<T>
+    {
         self.component(
             Component::transient::<T>()
                 .build()
@@ -235,7 +257,10 @@ impl<L : Lock> Injector<L> {
     /// // register type to the injector
     /// injector.singleton_dyn::<dyn Logger>();
     /// ```
-    pub fn singleton_dyn<T : DynamicInjectable<TDyn, L>, TDyn : Injectable + ?Sized>(&mut self) {
+    pub fn singleton_dyn<T : DynamicInjectable<TDyn, L>, TDyn : Injectable + ?Sized + AnyMetadata<L>>(&mut self)
+        where L : LockBound<T>,
+              L : LockBound<TDyn>
+    {
         self.component(
             Component::singleton::<T>()
                 .with_dynamic::<TDyn>()
@@ -266,7 +291,10 @@ impl<L : Lock> Injector<L> {
     /// // register type to the injector
     /// injector.transient_dyn::<dyn Logger>();
     /// ```
-    pub fn transient_dyn<T : DynamicInjectable<TDyn, L>, TDyn : Injectable + ?Sized>(&mut self) {
+    pub fn transient_dyn<T : DynamicInjectable<TDyn, L>, TDyn : Injectable + ?Sized + AnyMetadata<L>>(&mut self)
+        where L : LockBound<T>,
+              L : LockBound<TDyn>
+    {
         self.component(
             Component::transient::<T>()
                 .with_dynamic::<TDyn>()
@@ -345,54 +373,309 @@ impl<L : Lock> Injector<L> {
     pub fn component(&mut self, component: Component<L>) {
         self.container.register(component)
     }
-    
-    // /// Gets the global injector so services can be retrieved. Can panic if the underlying rwlock was poisoned.
-    // #[cfg(any(feature = "async", feature = "multithreaded"))]
-    // pub fn global() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::Mutex>> {
-    //     INJECTOR_INSTANCE.read()
-    //         .unwrap()
-    // }
-    // 
-    // /// Gets the global injector to be mutated. Can panic if the underlying rwlock was poisoned.
-    // #[cfg(any(feature = "async", feature = "multithreaded"))]
-    // pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::Mutex>> {
-    //     INJECTOR_INSTANCE.write()
-    //         .unwrap()
-    // }
 
-    // /// Initially mutates the injector for later use.
-    // #[cfg(not(any(feature = "async", feature = "multithreaded")))]
-    // #[allow(static_mut_refs)]
-    // pub fn initialize<F : FnOnce(&mut Injector)>(init_func: F) {
-    //     // Safety: The injector instance can only be initialized once and then never be mutated again.
-    //     // After this you can only get an injector reference to retrieve its services.
-    //     // Meaning that it cannot be mutated when someone has a reference to it.
-    //     unsafe {
-    //         match &mut INJECTOR_INSTANCE {
-    //             Some(_) => panic!("The injector cannot be initialized more than once."),
-    //             None => {
-    //                 let mut new_injector = Injector::new();
-    //                 init_func(&mut new_injector);
-    //                 
-    //                 INJECTOR_INSTANCE = Some(new_injector);
-    //             }
-    //         }
-    //     }
-    // }
-    // 
-    // /// Gets the global injector so services can be retrieved.
-    // #[cfg(not(any(feature = "async", feature = "multithreaded")))]
-    // #[allow(static_mut_refs)]
-    // pub fn global() -> &'static Injector {
-    //     // Safety: The injector instance can only be initialized once and then never be mutated again.
-    //     // After this you can only get an injector reference to retrieve its services.
-    //     // Meaning that it cannot be mutated when someone has a reference to it.
-    //     unsafe {
-    //         match &INJECTOR_INSTANCE {
-    //             Some(instance) => instance,
-    //             None => panic!("Injector has not been initialized. Please us the static initialize function to initialize the injector."),
-    //         }
-    //     }
-    // }
+    /// Gets a global reference to the [`Injector`]. This injector only works with [`std::sync::Arc<Mutex<T>>`].
+    /// Can be used to retrieve services from the [`Injector`]. 
+    /// 
+    /// To add new services use [`Self::global_mutex_mut`].
+    /// 
+    /// # Example:
+    /// 
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_mutex_mut();
+    /// 
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    /// 
+    /// // code here...
+    /// 
+    /// // retrieve service here
+    /// let injector = Injector::global_mutex();
+    /// let logger = injector.get::<ConsoleLogger>();
+    /// 
+    /// // use service here...
+    /// ```
+    #[cfg(feature = "globals")]
+    pub fn global_mutex() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::Mutex>> {
+        MUTEX_INJECTOR_INSTANCE.read()
+            .unwrap()
+    }
+
+    /// Gets a global mutable reference to the [`Injector`]. This injector only works with [`std::sync::Arc<Mutex<T>>`].
+    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    ///
+    /// To get a non-mutable reference use [`Self::global_mutex`].
+    ///
+    /// # Example:
+    ///
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_mutex_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_mutex();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(feature = "globals")]
+    pub fn global_mutex_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::Mutex>> {
+        MUTEX_INJECTOR_INSTANCE.write()
+            .unwrap()
+    }
+
+    /// Gets a global reference to the [`Injector`]. This injector only works with [`std::sync::Arc<RwLock<T>>`].
+    /// Can be used to retrieve services from the [`Injector`]. 
+    ///
+    /// To add new services use [`Self::global_rw_mut`].
+    ///
+    /// # Example:
+    ///
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_rw_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_rw();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(feature = "globals")]
+    pub fn global_rw() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::RwLock>> {
+        RW_INJECTOR_INSTANCE.read()
+            .unwrap()
+    }
+
+    /// Gets a global mutable reference to the [`Injector`]. This injector only works with [`std::sync::Arc<RwLock<T>>`].
+    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    ///
+    /// To get a non-mutable reference use [`Self::global_rw`].
+    ///
+    /// # Example:
+    ///
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_rw_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_rw();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(feature = "globals")]
+    pub fn global_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::RwLock>> {
+        RW_INJECTOR_INSTANCE.write()
+            .unwrap()
+    }
     
+    /// Used to initialize the services for use with the [`Injector`]. 
+    /// This [`Injector`] only works with [`std::rc::Rc<RefCell<T>>`].
+    /// 
+    /// This function is used to add the services for them to be retrieved later via the [`Self::global_ref_cell`] function.
+    /// You can pass an `init_func` which gets a mutable reference to the [`Injector`]. 
+    /// After this you can use the singleton or transient functions to add new services.
+    /// 
+    /// # Example:
+    /// 
+    /// ```rust
+    /// // initialize injector
+    /// Injector::initialize_ref_cell(|injector| {
+    ///     // add ConsoleLogger singleton
+    ///     injector.singleton::<ConsoleLogger>();
+    /// });
+    /// 
+    /// // retrieve injector and get the logger.
+    /// let injector = Injector::global_ref_cell();
+    /// let logger = injector.get::<ConsoleLogger>();
+    /// ```
+    #[cfg(feature = "globals")]
+    #[allow(static_mut_refs)]
+    pub fn initialize_ref_cell<F : FnOnce(&mut Injector<crate::sync::RefCell>)>(init_func: F) {
+        // Safety: The injector instance can only be initialized once and then never be mutated again.
+        // After this you can only get an injector reference to retrieve its services.
+        // Meaning that it cannot be mutated when someone has a reference to it.
+        unsafe {
+            match &mut REFCELL_INJECTOR_INSTANCE {
+                Some(_) => panic!("The injector cannot be initialized more than once."),
+                None => {
+                    let mut new_injector = Injector::new();
+                    init_func(&mut new_injector);
+
+                    REFCELL_INJECTOR_INSTANCE = Some(new_injector);
+                }
+            }
+        }
+    }
+
+    /// Used to retrieve the services from the [`Injector`]. 
+    /// This [`Injector`] only works with [`std::rc::Rc<RefCell<T>>`].
+    /// 
+    /// This function will panic if the [`Injector`] was not initialized. 
+    /// You can initialize the [`Injector`] using the [`Self::initialize_ref_cell`] function.
+    ///
+    /// # Example:
+    ///
+    /// ```rust
+    /// // initialize injector
+    /// Injector::initialize_ref_cell(|injector| {
+    ///     // add ConsoleLogger singleton
+    ///     injector.singleton::<ConsoleLogger>();
+    /// });
+    ///
+    /// // retrieve injector and get the logger.
+    /// let injector = Injector::global_ref_cell();
+    /// let logger = injector.get::<ConsoleLogger>();
+    /// ```
+    #[cfg(feature = "globals")]
+    #[allow(static_mut_refs)]
+    pub fn global_ref_cell() -> &'static Injector<crate::sync::RefCell> {
+        // Safety: The injector instance can only be initialized once and then never be mutated again.
+        // After this you can only get an injector reference to retrieve its services.
+        // Meaning that it cannot be mutated when someone has a reference to it.
+        unsafe {
+            match &REFCELL_INJECTOR_INSTANCE {
+                Some(injector) => injector,
+                None => panic!("The injector must first be initialized. Use the initialize_ref_cell function first."),
+            }
+        }
+    }
+
+    /// Gets a global reference to the [`Injector`]. 
+    /// This injector only works with [`std::sync::Arc<tokio::sync::Mutex<T>>`].
+    /// Can be used to retrieve services from the [`Injector`]. 
+    /// 
+    /// This [`Injector`] can be used for async applications.
+    ///
+    /// To add new services use [`Self::global_async_mutex_mut`].
+    ///
+    /// # Example
+    /// 
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_async_mutex_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_async_mutex();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(all(feature = "globals", feature = "async"))]
+    pub fn global_async_mutex() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::AsyncMutex>> {
+        ASYNC_MUTEX_INJECTOR_INSTANCE.read()
+            .unwrap()
+    }
+
+    /// Gets a global mutable reference to the [`Injector`]. This injector only works with [`std::sync::Arc<tokio::sync::Mutex<T>>`].
+    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    /// 
+    /// This [`Injector`] can be used for async applications.
+    ///
+    /// To get a non-mutable reference use [`Self::global_async_mutex`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_async_mutex_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_async_mutex();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(all(feature = "globals", feature = "async"))]
+    pub fn global_async_mutex_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncMutex>> {
+        ASYNC_MUTEX_INJECTOR_INSTANCE.write()
+            .unwrap()
+    }
+
+    /// Gets a global reference to the [`Injector`]. 
+    /// This injector only works with [`std::sync::Arc<tokio::sync::RwLock<T>>`].
+    /// Can be used to retrieve services from the [`Injector`]. 
+    /// 
+    /// This [`Injector`] can be used for async applications.
+    ///
+    /// To add new services use [`Self::global_async_rw_mut`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_async_rw_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_async_rw();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(all(feature = "globals", feature = "async"))]
+    pub fn global_async_rw() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::AsyncRwLock>> {
+        ASYNC_RW_INJECTOR_INSTANCE.read()
+            .unwrap()
+    }
+
+    /// Gets a global mutable reference to the [`Injector`]. 
+    /// This injector only works with [`std::sync::Arc<tokio::sync::RwLock<T>>`].
+    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    ///
+    /// To get a non-mutable reference use [`Self::global_async_rw`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // get mutable injector for adding services.
+    /// let injector = Injector::global_async_rw_mut();
+    ///
+    /// // add singleton
+    /// injector.singleton::<ConsoleLogger>();
+    ///
+    /// // code here...
+    ///
+    /// // retrieve service here
+    /// let injector = Injector::global_async_rw();
+    /// let logger = injector.get::<ConsoleLogger>();
+    ///
+    /// // use service here...
+    /// ```
+    #[cfg(all(feature = "globals", feature = "async"))]
+    pub fn global_async_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncRwLock>> {
+        ASYNC_RW_INJECTOR_INSTANCE.write()
+            .unwrap()
+    }
 }

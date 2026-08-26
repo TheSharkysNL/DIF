@@ -5,12 +5,10 @@ use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 
 /// Generic trait for lock types
 pub trait Lock : Default {
-    #[cfg(not(feature = "test-utils"))]
+    /// The actual lock for cloning and locking the object [`T`]
     type Lock<T : ?Sized> : Clone;
-
-    #[cfg(feature = "test-utils")]
-    type Lock<T : ?Sized> : Clone + Lockable<T>;
     
+    /// The pointee used for coercing the [`T`] type into a dynamic type.
     type Pointee<T : ?Sized>: ?Sized;
     
     /// Initialize a new lock instance
@@ -23,8 +21,12 @@ pub trait Lock : Default {
     /// 
     /// Safety: Callee must ensure that pointer comes from the [`Self::into_raw`] function.
     unsafe fn from_raw<T: ?Sized>(point: *const Self::Pointee<T>) -> Self::Lock<T>;
+
+    /// Creates a raw view into the underlying [`Self::Pointee`] type
+    fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T>;
 }
 
+/// A mutex lock using [`Arc<StdMutex<T>>`] under the hood.
 #[derive(Default, Debug)]
 pub struct Mutex;
 impl Lock for Mutex {
@@ -44,8 +46,13 @@ impl Lock for Mutex {
             Arc::from_raw(point)
         }
     }
+    
+    fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
+        Arc::as_ptr(lock)
+    }
 }
 
+/// A refcell lock using [`Rc<StdRefCell<T>>`] under the hood.
 #[derive(Default, Debug)]
 pub struct RefCell;
 impl Lock for RefCell {
@@ -65,8 +72,13 @@ impl Lock for RefCell {
             Rc::from_raw(point)
         }
     }
+    
+    fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
+        Rc::as_ptr(lock)
+    }
 }
 
+/// A read-write lock using [`Arc<StdRwLock<T>>`] under the hood.
 #[derive(Default, Debug)]
 pub struct RwLock;
 impl Lock for RwLock {
@@ -86,10 +98,16 @@ impl Lock for RwLock {
             Arc::from_raw(point)
         }
     }
+    
+    fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
+        Arc::as_ptr(lock)
+    }
 }
 
-#[cfg(feature = "async")]
+/// An async mutex lock using [`Arc<tokio::sync::Mutex<T>>`] under the hood.
+#[cfg(any(feature = "async"))]
 #[cfg_attr(feature = "async", derive(Default, Debug))]
+#[cfg_attr(doc, doc(cfg(feature = "async")))]
 pub struct AsyncMutex;
 #[cfg(feature = "async")]
 impl Lock for AsyncMutex {
@@ -109,10 +127,16 @@ impl Lock for AsyncMutex {
             Arc::from_raw(point)
         }
     }
+    
+    fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
+        Arc::as_ptr(lock)
+    }
 }
 
-#[cfg(feature = "async")]
+/// An async read-write lock using [`Arc<tokio::sync::RwLock<T>>`] under the hood
+#[cfg(any(feature = "async"))]
 #[cfg_attr(feature = "async", derive(Default, Debug))]
+#[cfg_attr(doc, doc(cfg(feature = "async")))]
 pub struct AsyncRwLock;
 #[cfg(feature = "async")]
 impl Lock for AsyncRwLock {
@@ -132,8 +156,28 @@ impl Lock for AsyncRwLock {
             Arc::from_raw(point)
         }
     }
+    
+    fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
+        Arc::as_ptr(lock)
+    }
 }
 
+/// A marker trait used for forcing [`Send`] and/or [`Sync`] on a type based on the lock.
+/// 
+/// Safety: [`T`] must have the correct [`Send`] and [`Sync`] marker traits based on the lock type. 
+pub unsafe trait LockBound<T: ?Sized> {}
+
+
+unsafe impl<T: ?Sized + Send> LockBound<T> for Mutex {}
+unsafe impl<T: ?Sized + Send + Sync> LockBound<T> for RwLock {}
+unsafe impl<T: ?Sized> LockBound<T> for RefCell {}
+
+#[cfg(feature = "async")]
+unsafe impl<T: ?Sized + Send> LockBound<T> for AsyncMutex {}
+#[cfg(feature = "async")]
+unsafe impl<T: ?Sized + Send + Sync> LockBound<T> for AsyncRwLock {}
+
+/// A view into dyn fat pointers
 #[doc(hidden)]
 #[repr(C)]
 pub struct RawFatPtr {
@@ -141,27 +185,30 @@ pub struct RawFatPtr {
     pub vtable: *const (),
 }
 
+/// Used to coerce Sized types of [`T`] into Unsized types of [`U`]
+/// 
+/// Safety: the vtable given must correct for the given [`T`] and [`U`] pair.
 #[doc(hidden)]
-pub unsafe fn coerce<L: Lock, T, U: ?Sized>(
+pub unsafe fn coerce<L: Lock, T : ?Sized, U: ?Sized>(
     lock: L::Lock<T>,
     vtable: *const (),
 ) -> L::Lock<U> {
     let raw = L::into_raw(lock);
 
     let fat = RawFatPtr { data: raw as *const (), vtable };
+    // Safety: only safe if T can be coerced to U and vtable is correct.
     let dyn_ptr: *const L::Pointee<U> = unsafe { std::mem::transmute_copy(&fat) };
     
     unsafe { L::from_raw(dyn_ptr) }
 }
 
-#[cfg(feature = "test-utils")]
+/// Used for generic locking of the different [`Lock`] implementations.
 pub trait Lockable<T : ?Sized> {
     fn read(&self) -> impl std::ops::Deref<Target = T> + '_;
     
-    fn write(&self) -> impl std::ops::DerefMut<Target = T> + std::ops::Deref<Target = T>  + '_;
+    fn write(&self) -> impl std::ops::DerefMut<Target = T>  + '_;
 }
 
-#[cfg(feature = "test-utils")]
 impl<T : ?Sized> Lockable<T> for Arc<StdMutex<T>> {
     fn read(&self) -> impl std::ops::Deref<Target = T> + '_ {
         self.lock().unwrap()
@@ -172,7 +219,6 @@ impl<T : ?Sized> Lockable<T> for Arc<StdMutex<T>> {
     }
 }
 
-#[cfg(feature = "test-utils")]
 impl<T : ?Sized> Lockable<T> for Arc<StdRwLock<T>> {
     fn read(&self) -> impl std::ops::Deref<Target = T> + '_ {
         StdRwLock::read(self).unwrap()
@@ -183,7 +229,6 @@ impl<T : ?Sized> Lockable<T> for Arc<StdRwLock<T>> {
     }
 }
 
-#[cfg(feature = "test-utils")]
 impl<T : ?Sized> Lockable<T> for Rc<StdRefCell<T>> {
     fn read(&self) -> impl std::ops::Deref<Target = T> + '_ {
         StdRefCell::borrow(self)
@@ -191,6 +236,38 @@ impl<T : ?Sized> Lockable<T> for Rc<StdRefCell<T>> {
 
     fn write(&self) -> impl std::ops::DerefMut<Target = T> + '_ {
         StdRefCell::borrow_mut(self)
+    }
+}
+
+/// An async variant of the [`Lockable`] trait
+/// 
+/// Used for generic locking of the different [`Lock`] implementations asynchronously.
+#[cfg(feature = "async")]
+pub trait AsyncLockable<T : ?Sized> {
+    fn read(&self) -> impl Future<Output = impl std::ops::Deref<Target = T> + '_> + Send + Sync + '_;
+    
+    fn write(&self) -> impl Future<Output = impl std::ops::DerefMut<Target = T> + '_> + Send + Sync + '_;
+}
+
+#[cfg(feature = "async")]
+impl<T : ?Sized + Send> AsyncLockable<T> for Arc<tokio::sync::Mutex<T>> {
+    fn read(&self) -> impl Future<Output = impl std::ops::Deref<Target = T> + '_> + Send + Sync + '_ {
+        self.lock()
+    }
+    
+    fn write(&self) -> impl Future<Output = impl std::ops::DerefMut<Target = T> + '_> + Send + Sync + '_{
+        self.lock()
+    }
+} 
+
+#[cfg(feature = "async")]
+impl<T : ?Sized + Send + Sync> AsyncLockable<T> for Arc<tokio::sync::RwLock<T>> {
+    fn read(&self) -> impl Future<Output = impl std::ops::Deref<Target = T> + '_> + Send + Sync + '_ {
+        tokio::sync::RwLock::read(self)
+    }
+    
+    fn write(&self) -> impl Future<Output = impl std::ops::DerefMut<Target = T> + '_> + Send + Sync + '_ {
+        tokio::sync::RwLock::write(self)
     }
 }
 

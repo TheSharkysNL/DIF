@@ -1,12 +1,12 @@
 [package]
 name = "dif"
-version = "1.4.0"
+version = "2.0.0"
 edition = "2024"
 
 [features]
 macros = ["dif_macros"]
 async = ["dif_core/async"]
-test-utils = ["dif_core/test-utils", "macros"]
+globals = ["dif_core/globals"]
 
 [dependencies]
 dif_core = { path = "dif_core" }
@@ -24,3 +24,7 @@ harness = false
 [workspace]
 resolver = "3"
 members = ["dif_core"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

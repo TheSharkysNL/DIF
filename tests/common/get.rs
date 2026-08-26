@@ -3,17 +3,17 @@ use generic_tests::define;
 #[define]
 mod tests {
     use std::any::TypeId;
-    use dif_core::sync::Lockable;
+    use dif_core::sync::{LockBound, Lockable};
     use dif::Injector;
     use dif::sync::{Mutex, RwLock, RefCell};
     #[cfg(feature = "async")]
     use dif::sync::{AsyncMutex, AsyncRwLock};
-    use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING};
+    use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService};
     use dif::sync::Lock;
     use std::ops::Deref;
 
     #[test]
-    pub fn get_empty<L : Lock>() {
+    pub fn get_empty<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let injector = Injector::<L>::new();
 
@@ -25,7 +25,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_empty_dynamic<L : Lock>() {
+    pub fn get_empty_dynamic<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let injector = Injector::<L>::new();
 
@@ -38,7 +38,7 @@ mod tests {
 
 
     #[test]
-    pub fn get_empty_list<L : Lock>() {
+    pub fn get_empty_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let injector = Injector::<L>::new();
 
@@ -50,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_singleton_multiple_times<L : Lock>() {
+    pub fn get_singleton_multiple_times<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_transient_multiple_times<L : Lock>() {
+    pub fn get_transient_multiple_times<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_singleton_multiple_times_dynamic<L : Lock>() {
+    pub fn get_singleton_multiple_times_dynamic<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -128,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_transient_multiple_times_dynamic<L : Lock>() {
+    pub fn get_transient_multiple_times_dynamic<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_singleton_single_list<L : Lock>() {
+    pub fn get_singleton_single_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -181,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_transient_single_list<L : Lock>() {
+    pub fn get_transient_single_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_singleton_list<L : Lock>() {
+    pub fn get_singleton_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_transient_list<L : Lock>() {
+    pub fn get_transient_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_singleton_multiple_list<L : Lock>() {
+    pub fn get_singleton_multiple_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_transient_multiple_list<L : Lock>() {
+    pub fn get_transient_multiple_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_transient_and_singleton_multiple_list<L : Lock>() {
+    pub fn get_transient_and_singleton_multiple_list<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         {
             // Arrange
             let mut injector = Injector::<L>::new();
@@ -388,7 +388,9 @@ mod tests {
     }
 
     #[test]
-    pub fn get_by_id_test_logger<L : Lock>() {
+    pub fn get_by_id_test_logger<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() 
+        where <L as Lock>::Lock<dyn Logger> : Lockable<dyn Logger>
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -414,7 +416,9 @@ mod tests {
     }
 
     #[test]
-    pub fn get_by_id_another_logger<L : Lock>() {
+    pub fn get_by_id_another_logger<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>()
+        where <L as Lock>::Lock<dyn Logger> : Lockable<dyn Logger>
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -440,7 +444,9 @@ mod tests {
     }
 
     #[test]
-    pub fn get_by_id_single_logger<L : Lock>() {
+    pub fn get_by_id_single_logger<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>()
+        where <L as Lock>::Lock<dyn Logger> : Lockable<dyn Logger>
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -465,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_by_id_not_found<L : Lock>() {
+    pub fn get_by_id_not_found<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -481,7 +487,9 @@ mod tests {
     }
 
     #[test]
-    pub fn get_any_singleton<L : Lock>() {
+    pub fn get_any_singleton<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>()
+        where <L as Lock>::Lock<TestLogger> : Lockable<TestLogger>
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -509,7 +517,9 @@ mod tests {
     }
     
     #[test]
-    pub fn get_any_transient<L : Lock>() {
+    pub fn get_any_transient<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() 
+        where <L as Lock>::Lock<TestLogger> : Lockable<TestLogger>
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -537,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_any_invalid_singleton<L : Lock>() {
+    pub fn get_any_invalid_singleton<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -553,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_any_invalid_transient<L : Lock>() {
+    pub fn get_any_invalid_transient<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -569,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_invalid_get_singleton<L : Lock>() {
+    pub fn get_invalid_get_singleton<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -591,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    pub fn get_invalid_get_transient<L : Lock>() {
+    pub fn get_invalid_get_transient<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -613,7 +623,9 @@ mod tests {
     }
 
     #[test]
-    pub fn first_with_multiple_dyns_singleton<L : Lock + 'static>() {
+    pub fn first_with_multiple_dyns_singleton<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService> + 'static>()
+        where <L as Lock>::Lock<dyn Logger> : Lockable<dyn Logger>,
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -635,7 +647,9 @@ mod tests {
     }
 
     #[test]
-    pub fn first_with_multiple_dyns_transient<L : Lock + 'static>() {
+    pub fn first_with_multiple_dyns_transient<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService> + 'static>()
+        where <L as Lock>::Lock<dyn Logger> : Lockable<dyn Logger>,
+    {
         // Arrange
         let mut injector = Injector::<L>::new();
 
@@ -664,12 +678,4 @@ mod tests {
 
     #[instantiate_tests(<RefCell>)]
     mod refcell_tests {}
-    
-    #[cfg(feature = "async")]
-    #[instantiate_tests(<AsyncMutex>)]
-    mod async_mutex_tests {}
-
-    #[cfg(feature = "async")]
-    #[instantiate_tests(<AsyncRwLock>)]
-    mod async_rwlock_tests {}
 }

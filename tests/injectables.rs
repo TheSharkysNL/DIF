@@ -2,6 +2,7 @@ use std::any::TypeId;
 pub use dif::service;
 use dif::{dynamic_service};
 use std::cell::{Cell, RefCell};
+use dif_core::sync::{Lock, Lockable};
 use dif_macros::Service;
 
 thread_local! {
@@ -51,7 +52,6 @@ pub fn reset() {
 }
 
 pub struct AnotherLogger {
-    
 }
 
 #[service]
@@ -60,7 +60,7 @@ impl AnotherLogger {
         let count = OTHER_INITIALIZE_COUNT.get();
         OTHER_INITIALIZE_COUNT.set(count + 1);
         
-        Self {}
+        Self { }
     }
 }
 
@@ -72,7 +72,7 @@ impl Drop for AnotherLogger {
 }
 
 #[dynamic_service]
-pub trait Logger : Send + 'static {
+pub trait Logger : Send + Sync + 'static {
     fn write(&mut self, message: &str);
     
     fn type_id(&self) -> TypeId {
@@ -103,5 +103,25 @@ pub struct AnotherService {
 impl Logger for AnotherService {
     fn write(&mut self, _: &str) {
         // do nothing again
+    }
+}
+
+pub struct LoggerUser<L : Lock> {
+    logger: L::Lock<TestLogger>,
+}
+
+#[service]
+impl<L : Lock + 'static> LoggerUser<L> {
+    pub fn new(logger: L::Lock<TestLogger>) -> Self {
+        Self {
+            logger,
+        }
+    }
+    
+    pub fn write_my_logs(&self)
+        where <L as Lock>::Lock<TestLogger> : Lockable<TestLogger>
+    {
+        let mut logger = self.logger.write();
+        logger.write("my message");
     }
 }
