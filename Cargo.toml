@@ -3,6 +3,7 @@ name = "dif"
 version = "2.0.0"
 edition = "2024"
 license = "MIT"
+description = "A lightweight crate for dependency injection."
 
 [features]
 macros = ["dif_macros"]
@@ -10,8 +11,8 @@ async = ["dif_core/async"]
 globals = ["dif_core/globals"]
 
 [dependencies]
-dif_core = { path = "dif_core" }
-dif_macros = { path = "dif_macros", optional = true }
+dif_core = { path = "dif_core", version = "2.0.0" }
+dif_macros = { path = "dif_macros", version = "2.0.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.8.2"
