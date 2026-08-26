@@ -17,7 +17,7 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// 
 /// # Examples
 /// 
-/// With factory method
+/// With factory method. If you don't need initialization you can use #[derive(Service)].
 /// ```rust
 /// #[service]
 /// impl ConsoleLogger {
@@ -33,7 +33,7 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// }
 /// ```
 /// 
-/// With dynamic traits
+/// With dynamic traits.
 /// ```rust
 /// // this way the ConsoleLogger type can be used with dyn Logger. 
 /// // for example injector.singleton_dyn::<ConsoleLogger, dyn Logger>();
@@ -42,6 +42,49 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// impl Logger for ConsoleLogger {
 ///     fn write(&mut self, message: &str) {
 ///         self.write(message);
+///     }
+/// }
+/// ```
+/// 
+/// With dependency injection. Can be used with any type that implements the dif::sync::Lock trait.
+/// ```rust
+/// impl UserService {
+///     pub fn new(dependency: <dif::sync::Mutex as dif::sync::Lock>::Lock<Dependency>) -> Self {
+///         println!("UserService initialized"); // print out when the service is initialized
+///         Self {
+///             dependency,
+///         }
+///     }
+///     
+///     pub fn get_user(&mut self, user_id: u32) -> Option<User> {
+///         let dependency_guard = self.dependency.lock()
+///             .unwrap();
+/// 
+///         // use dependency here...
+///     }
+/// }
+/// ```
+/// 
+/// With generic lock. This is not recommended as it is hard to work with but still possible.
+/// ```rust
+/// impl<L : dif::sync::Lock> UserService<L> {
+///     pub fn new(dependency: L::Lock<Dependency>) -> Self {
+///         println!("UserService initialized"); // print out when the service is initialized
+///         Self {
+///             dependency,
+///         }
+///     }
+///     
+///     pub fn get_user(&mut self, user_id: u32) -> Option<User> 
+///         where <L as dif::sync::Lock>::Lock<Dependency> : dif::sync::Lockable<Dependency> // check type is lockable
+///     {
+///         let dependency_guard = self.dependency.write() // get dependency as write
+///             .unwrap();
+/// 
+///         let dependency_guard = self.dependency.read() // get dependency as read
+///             .unwrap();
+///
+///         // use dependency here...
 ///     }
 /// }
 /// ```

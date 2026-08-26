@@ -6,8 +6,6 @@ mod tests {
     use dif_core::sync::{LockBound, Lockable};
     use dif::Injector;
     use dif::sync::{Mutex, RwLock, RefCell};
-    #[cfg(feature = "async")]
-    use dif::sync::{AsyncMutex, AsyncRwLock};
     use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService};
     use dif::sync::Lock;
     use std::ops::Deref;
