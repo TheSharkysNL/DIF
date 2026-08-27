@@ -9,15 +9,16 @@ use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 
-/// Turns the impl type passed into a injectable type. 
-/// Then it uses the `pub fn new() -> Self` method as a factory method
-/// 
-/// This macro can also be used to link types to their dynamic types. 
-/// This can be done by adding this macro above a trait implement block
+/// Turns the type in the impl block into an injectable type.
+/// It uses the `pub fn new() -> Self` method as the factory method.
+///
+/// This macro can also link a type to a dynamic trait type by placing it
+/// above a trait implementation block.
 /// 
 /// # Examples
 /// 
-/// With factory method. If you don't need initialization you can use #[derive(Service)].
+/// With a factory method. If you do not need initialization, you can use
+/// `#[derive(Service)]` instead.
 /// ```rust
 /// #[service]
 /// impl ConsoleLogger {
@@ -33,10 +34,10 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// }
 /// ```
 /// 
-/// With dynamic traits.
+/// With a dynamic trait.
 /// ```rust
-/// // this way the ConsoleLogger type can be used with dyn Logger. 
-/// // for example injector.singleton_dyn::<ConsoleLogger, dyn Logger>();
+/// // This allows ConsoleLogger to be used as dyn Logger.
+/// // For example: injector.singleton_dyn::<ConsoleLogger, dyn Logger>();
 /// 
 /// #[service]
 /// impl Logger for ConsoleLogger {
@@ -46,7 +47,8 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// }
 /// ```
 /// 
-/// With dependency injection. Can be used with any type that implements the dil::sync::Lock trait.
+/// With dependency injection. This can be used with any type that implements
+/// the `dil::sync::Lock` trait.
 /// ```rust
 /// impl UserService {
 ///     pub fn new(dependency: <dil::sync::Mutex as dil::sync::Lock>::Lock<Dependency>) -> Self {
@@ -65,7 +67,8 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// }
 /// ```
 /// 
-/// With generic lock. This is not recommended as it is hard to work with but still possible.
+/// With a generic lock. This is not recommended because it is harder to use,
+/// but it is still possible.
 /// ```rust
 /// impl<L : dil::sync::Lock> UserService<L> {
 ///     pub fn new(dependency: L::Lock<Dependency>) -> Self {
@@ -98,7 +101,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Turns a trait declaration into a trait that can be injected.
+/// Turns a trait declaration into an injectable trait.
 /// 
 /// # Examples
 /// 
@@ -118,8 +121,8 @@ pub fn dynamic_service(args: TokenStream, input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Turns a struct declaration into a type that can be injected. 
-/// This will inject all the fields within the struct. 
+/// Turns a struct declaration into an injectable type.
+/// All fields in the struct are resolved from the injector.
 /// 
 /// ```rust
 /// #[derive(Service)]

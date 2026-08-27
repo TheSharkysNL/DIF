@@ -7,29 +7,29 @@ use std::marker::PhantomData;
 use crate::container::DynInstanceCellFn;
 use crate::sync::{Lock, LockBound};
 
-/// A marker trait used to show that a type can be injected.
+/// A marker trait indicating that a type can be injected.
 pub trait Injectable : 'static {
 }
 
 /// Used to create types for the injector.
 pub trait FromInjector<L : Lock> : AnyMetadata<L> {
-    /// Create Self using the `injector`
+    /// Creates `Self` using the `injector`.
     fn from_injector(injector: &Injector<L>) -> Self;
 }
 
 /// A dynamic injectable. Used for dyn coercion
 pub trait DynamicInjectable<T : Injectable + ?Sized, L : Lock> : FromInjector<L> + 'static {
-    /// Used to create a dynamic instance from the Self type.
+    /// Creates a dynamic instance from `Self`.
     fn create_dynamic(s: L::Lock<Self>) -> L::Lock<T>;
 }
 
-/// The lifetime of a component. Can be either a singleton or transient. 
+/// The lifetime of a component: either singleton or transient.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum ComponentLifetime {
-    /// Creates one single instance of the type.
+    /// Creates one instance of the type and reuses it for subsequent requests.
     #[default]
     Singleton,
-    /// Creates a new instance of the type each time it is retrieved.
+    /// Creates a new instance of the type for each request.
     Transient
 }
 
@@ -55,7 +55,7 @@ impl<L : Lock> ComponentCreateFunction<L> {
     }
 }
 
-/// A component that can be added to a Injector.
+/// A component that can be added to an [`Injector`].
 pub struct Component<L : Lock> {
     pub(crate) lifetime: ComponentLifetime,
     pub(crate) create_func: ComponentCreateFunction<L>,
@@ -68,12 +68,12 @@ pub struct Component<L : Lock> {
 }
 
 impl<L : Lock> Component<L> {
-    /// Returns the lifetime of the component
+    /// Returns the lifetime of the component.
     pub fn lifetime(&self) -> ComponentLifetime {
         self.lifetime
     }
     
-    /// Returns the unique id/TypeId of the type.
+    /// Returns the unique [`TypeId`] of the component's type.
     pub fn unique_id(&self) -> TypeId {
         self.unique_id
     }
@@ -97,7 +97,7 @@ pub struct ComponentBuilder<T, L : Lock> {
 }
 
 impl<L : Lock> Component<L> {
-    /// Creates a singleton component and returns a component builder.
+    /// Creates a singleton component builder.
     pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L>
         where L : LockBound<T>
     {
@@ -109,7 +109,7 @@ impl<L : Lock> Component<L> {
         }
     }
 
-    /// Creates a transient component and returns a component builder.
+    /// Creates a transient component builder.
     pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L>
         where L : LockBound<T>
     {
@@ -123,7 +123,7 @@ impl<L : Lock> Component<L> {
 }
 
 impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
-    /// Creates the type using a custom factory function
+    /// Configures a custom factory function for creating the type.
     pub fn with_factory(self, factory: impl Fn(&Injector<L>) -> T + Send + Sync + 'static) -> Self {
         Self {
             lifetime: self.lifetime,
@@ -136,8 +136,11 @@ impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
         }
     }
 
-    /// Lets the type T be retrieved via the injector using a dynamic type. Usefull if you want other crates to implement their own special type that will be injected.
-    /// This way you can retrieve the type using `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
+    /// Makes `T` retrievable through the injector as a dynamic type.
+    /// This is useful when another crate provides the dynamic trait
+    /// implementation to be injected.
+    /// You can retrieve it with `injector.get::<TDyn>()` or
+    /// `injector.get_list::<TDyn>()`.
     /// Multiple dynamic types can be set.
     pub fn with_dynamic<TDyn : Injectable + ?Sized  + 'static + AnyMetadata<L>>(self) -> Self
         where T : DynamicInjectable<TDyn, L>,
@@ -163,7 +166,7 @@ impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
         }
     }
 
-    /// Creates the component 
+    /// Builds the component.
     pub fn build(self) -> Component<L> {
         Component {
             lifetime: self.lifetime,

@@ -3,26 +3,29 @@ use std::cell::RefCell as StdRefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 
-/// Generic trait for lock types
+/// A common interface for the lock types supported by the injector.
 pub trait Lock : Default {
-    /// The actual lock for cloning and locking the object [`T`]
+    /// The lock type used to own and access a value of type `T`.
     type Lock<T : ?Sized> : Clone;
     
-    /// The pointee used for coercing the [`T`] type into a dynamic type.
+    /// The pointee type used when coercing `T` into a dynamic type.
     type Pointee<T : ?Sized>: ?Sized;
     
-    /// Initialize a new lock instance
+    /// Creates a new lock containing `value`.
     fn new<T>(value: T) -> Self::Lock<T>;
 
-    /// Decompose into the raw pointee pointer. Must not touch the refcount.
+    /// Decomposes the lock into a raw pointer without changing its refcount.
     fn into_raw<T: ?Sized>(lock: Self::Lock<T>) -> *const Self::Pointee<T>;
     
-    /// Reconstruct from a raw pointee pointer of the same allocation.
-    /// 
-    /// Safety: Callee must ensure that pointer comes from the [`Self::into_raw`] function.
+    /// Reconstructs a lock from a raw pointer to the same allocation.
+    ///
+    /// # Safety
+    /// `point` must have been returned by [`Self::into_raw`] for the same lock
+    /// implementation and type, and ownership of that raw pointer must be
+    /// transferred to this call exactly once.
     unsafe fn from_raw<T: ?Sized>(point: *const Self::Pointee<T>) -> Self::Lock<T>;
 
-    /// Creates a raw view into the underlying [`Self::Pointee`] type
+    /// Creates a raw, non-owning view of the underlying [`Self::Pointee`].
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T>;
 }
 
@@ -164,7 +167,10 @@ impl Lock for AsyncRwLock {
 
 /// A marker trait used for forcing [`Send`] and/or [`Sync`] on a type based on the lock.
 /// 
-/// Safety: [`T`] must have the correct [`Send`] and [`Sync`] marker traits based on the lock type. 
+/// # Safety
+/// Implementations must enforce the [`Send`] and [`Sync`] bounds required by
+/// the lock type. A lock must not allow a value to cross a thread boundary
+/// unless that value is safe to send or share there.
 pub unsafe trait LockBound<T: ?Sized> {}
 
 
@@ -187,7 +193,9 @@ pub struct RawFatPtr {
 
 /// Used to coerce Sized types of [`T`] into Unsized types of [`U`]
 /// 
-/// Safety: the vtable given must correct for the given [`T`] and [`U`] pair.
+/// # Safety
+/// `vtable` must be the correct vtable for coercing the pointee for `T` into
+/// the pointee for `U`.
 #[doc(hidden)]
 pub unsafe fn coerce<L: Lock, T : ?Sized, U: ?Sized>(
     lock: L::Lock<T>,
@@ -196,7 +204,7 @@ pub unsafe fn coerce<L: Lock, T : ?Sized, U: ?Sized>(
     let raw = L::into_raw(lock);
 
     let fat = RawFatPtr { data: raw as *const (), vtable };
-    // Safety: only safe if T can be coerced to U and vtable is correct.
+    // Safety: T can be coerced to U and the caller supplied the matching vtable.
     let dyn_ptr: *const L::Pointee<U> = unsafe { std::mem::transmute_copy(&fat) };
     
     unsafe { L::from_raw(dyn_ptr) }
@@ -239,9 +247,10 @@ impl<T : ?Sized> Lockable<T> for Rc<StdRefCell<T>> {
     }
 }
 
-/// An async variant of the [`Lockable`] trait
-/// 
-/// Used for generic locking of the different [`Lock`] implementations asynchronously.
+/// An asynchronous variant of the [`Lockable`] trait.
+///
+/// Provides generic access to the supported [`Lock`] implementations in
+/// asynchronous code.
 #[cfg(feature = "async")]
 pub trait AsyncLockable<T : ?Sized> {
     fn read(&self) -> impl Future<Output = impl std::ops::Deref<Target = T> + '_> + Send + Sync + '_;
@@ -271,14 +280,14 @@ impl<T : ?Sized + Send + Sync> AsyncLockable<T> for Arc<tokio::sync::RwLock<T>> 
     }
 }
 
-/// Lock containing an InstanceCell which can contain any type.
+/// A lock containing an [`InstanceCell`] that can hold any type.
 #[derive(Clone)]
 pub struct InstanceCellLock<L : Lock> {
     pub(crate) value: InstanceCell<L>,
 }
 
 impl<L : Lock> InstanceCellLock<L> {
-    /// Downcasts the instance to the type of `T` if possible else it will return a None value.
+    /// Downcasts the instance to `T`, returning `None` if the types do not match.
     ///
     /// # Examples
     /// ```rust

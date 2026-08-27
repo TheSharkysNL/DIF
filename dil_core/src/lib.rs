@@ -1,5 +1,3 @@
-#![cfg_attr(doc, feature(doc_cfg))]
-
 mod components;
 mod container;
 pub mod sync;
@@ -42,16 +40,16 @@ pub struct Injector<L : Lock> {
 }
 
 impl<L : Lock> Injector<L> {
-    /// Creates a new instance of the injector
+    /// Creates a new, empty injector.
     pub fn new() -> Self {
         Self {
             container: Default::default(),
         }
     }
     
-    /// Gets a thread-safe Mutex for the type `T`. 
-    /// 
-    /// Returns `None` if the `T` instance has not been registered.
+    /// Gets the lock containing the type `T`.
+    ///
+    /// Returns `None` if no component for `T` has been registered.
     /// 
     /// # Examples
     /// 
@@ -75,7 +73,8 @@ impl<L : Lock> Injector<L> {
     /// logger.write("It worked!");
     /// ```
     ///
-    /// Can also be used to retrieve dynamic instances. This will get the first instance that was added to the injector.
+    /// This can also retrieve dynamic instances. When multiple instances are
+    /// registered for a dynamic type, this returns the first one registered.
     ///
     /// For example:
     ///
@@ -92,12 +91,12 @@ impl<L : Lock> Injector<L> {
     /// // logger here will be the `ConsoleLogger` type as that is the first instance that was added.
     /// ```
     /// 
-    /// If you want to get a specific instance of the dynamic type. You can use injector.get_by_id.
+    /// To retrieve a specific dynamic instance, use [`Self::get_by_id`].
     pub fn get<T : ?Sized + 'static>(&self) -> Option<L::Lock<T>> {
         self.container.get(self)
     }
 
-    /// Gets a thread-safe list of all the `dyn` instances of `T` that have been registered.
+    /// Returns an iterator over all registered dynamic instances of `T`.
     ///
     /// # Examples
     /// 
@@ -126,8 +125,8 @@ impl<L : Lock> Injector<L> {
         self.container.get_list(self)
     }
     
-    /// Gets a dynamic type using its type id. 
-    /// This can be used to retrieve a specific type at runtime.
+    /// Gets a dynamic type using its [`TypeId`].
+    /// This can retrieve a specific implementation at runtime.
     /// 
     /// # Example
     ///
@@ -147,20 +146,20 @@ impl<L : Lock> Injector<L> {
         self.container.get_by_id(type_id, self)
     }
     
-    /// Gets an Any type based on the given TypeId that can be downcast.
+    /// Gets an [`Any`] value by [`TypeId`] that can be downcast.
     pub fn get_any(&self, type_id: TypeId) -> Option<InstanceCellLock<L>> {
         self.container.get_instance_cell(type_id, self)
     }
     
-    /// Creates a new instance of the type `T` by using the instance components within the injector.
-    /// Be weary as this method will always create a new instance even if it was registered as singleton.
-    /// 
-    /// This method can be used to get ownership of a type instead of a `Mutex` type
+    /// Creates a new instance of `T` using the components in the injector.
+    /// This always creates a new instance, even if `T` was registered as a
+    /// singleton.
+    ///
+    /// This method returns ownership of `T` instead of a lock containing `T`.
     /// 
     /// # Panics
     /// 
-    /// If a component is not found within the injector
-    /// it will panic
+    /// If a required component is not found in the injector.
     /// 
     /// # Examples
     /// 
@@ -189,10 +188,10 @@ impl<L : Lock> Injector<L> {
         T::from_injector(self)
     }
     
-    /// Registers a singleton instance to the injector.
-    /// 
-    /// A singleton meaning that the instance is created once 
-    /// and then reused for every call to `injector.get::<T>()`.
+    /// Registers a singleton component with the injector.
+    ///
+    /// The instance is created once and reused for every call to
+    /// `injector.get::<T>()`.
     /// 
     /// # Examples
     /// 
@@ -212,10 +211,9 @@ impl<L : Lock> Injector<L> {
         )
     }
 
-    /// Registers a transient instance to the injector.
+    /// Registers a transient component with the injector.
     ///
-    /// A transient meaning that the instance is created 
-    /// for every call to `injector.get::<T>()`.
+    /// A new instance is created for every call to `injector.get::<T>()`.
     ///
     /// # Examples
     ///
@@ -237,16 +235,17 @@ impl<L : Lock> Injector<L> {
 
     /// Registers a `dyn` singleton instance to the injector.
     ///
-    /// A singleton meaning that the instance is created once 
-    /// and then reused for every call to `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
+    /// The instance is created once and reused for every call to
+    /// `injector.get::<TDyn>()` or `injector.get_list::<TDyn>()`.
     /// 
     /// # Edge cases
     /// 
-    /// When registering multiple instances of a dynamic type. 
-    /// Getting all the instances of that dynamic type can be done with the `injector.get_list::<TDyn>()`.
-    /// If the regular (`injector.get::<TDyn>()`) method is used, the first instance that was registered will be resolved.
+    /// When multiple instances of a dynamic type are registered, use
+    /// `injector.get_list::<TDyn>()` to retrieve them all. The regular
+    /// `injector.get::<TDyn>()` method returns the first registered instance.
     ///
-    /// Registering a dynamic type, will not also register the original type `T`. This must be done separately.
+    /// Registering a dynamic type does not also register the original type
+    /// `T`; register it separately when needed.
     /// 
     /// # Examples
     ///
@@ -270,9 +269,9 @@ impl<L : Lock> Injector<L> {
 
     /// Registers a `dyn` transient instance to the injector.
     ///
-    /// A transient meaning that the instance is created 
-    /// for every call to `injector.get::<TDyn>()` 
-    /// or every time the iterator resolved from `injector.get_list::<TDyn>()` is iterated through.
+    /// A new instance is created for every call to `injector.get::<TDyn>()` or
+    /// each time the iterator returned by `injector.get_list::<TDyn>()` yields
+    /// an item.
     ///
     /// # Edge cases
     ///
@@ -302,7 +301,7 @@ impl<L : Lock> Injector<L> {
         )
     }
     
-    /// Registers a component type to further customize the instance registered
+    /// Registers a component builder to customize how an instance is created.
     /// 
     /// # Examples
     /// 
@@ -374,12 +373,12 @@ impl<L : Lock> Injector<L> {
         self.container.register(component)
     }
 
-    /// Gets a global reference to the [`Injector`]. This injector only works with [`std::sync::Arc<Mutex<T>>`].
-    /// Can be used to retrieve services from the [`Injector`]. 
+    /// Gets a read guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<Mutex<T>>`] for registered values.
+    ///
+    /// Use [`Self::global_mutex_mut`] to register additional services.
     /// 
-    /// To add new services use [`Self::global_mutex_mut`].
-    /// 
-    /// # Example:
+    /// # Example
     /// 
     /// ```rust
     /// // get mutable injector for adding services.
@@ -402,12 +401,14 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
 
-    /// Gets a global mutable reference to the [`Injector`]. This injector only works with [`std::sync::Arc<Mutex<T>>`].
-    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    /// Gets a write guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<Mutex<T>>`] for registered values.
+    ///
+    /// Use this guard to retrieve services or register new ones.
     ///
     /// To get a non-mutable reference use [`Self::global_mutex`].
     ///
-    /// # Example:
+    /// # Example
     ///
     /// ```rust
     /// // get mutable injector for adding services.
@@ -430,12 +431,12 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
 
-    /// Gets a global reference to the [`Injector`]. This injector only works with [`std::sync::Arc<RwLock<T>>`].
-    /// Can be used to retrieve services from the [`Injector`]. 
+    /// Gets a read guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<RwLock<T>>`] for registered values.
     ///
     /// To add new services use [`Self::global_rw_mut`].
     ///
-    /// # Example:
+    /// # Example
     ///
     /// ```rust
     /// // get mutable injector for adding services.
@@ -458,12 +459,14 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
 
-    /// Gets a global mutable reference to the [`Injector`]. This injector only works with [`std::sync::Arc<RwLock<T>>`].
-    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    /// Gets a write guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<RwLock<T>>`] for registered values.
+    ///
+    /// Use this guard to retrieve services or register new ones.
     ///
     /// To get a non-mutable reference use [`Self::global_rw`].
     ///
-    /// # Example:
+    /// # Example
     ///
     /// ```rust
     /// // get mutable injector for adding services.
@@ -486,14 +489,18 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
     
-    /// Used to initialize the services for use with the [`Injector`]. 
-    /// This [`Injector`] only works with [`std::rc::Rc<RefCell<T>>`].
-    /// 
-    /// This function is used to add the services for them to be retrieved later via the [`Self::global_ref_cell`] function.
-    /// You can pass an `init_func` which gets a mutable reference to the [`Injector`]. 
-    /// After this you can use the singleton or transient functions to add new services.
-    /// 
-    /// # Example:
+    /// Initializes the global [`Injector`] backed by
+    /// [`std::rc::Rc<RefCell<T>>`].
+    ///
+    /// The `init_func` receives a mutable injector for registering services.
+    /// Initialization may be performed only once; afterward, use
+    /// [`Self::global_ref_cell`] to retrieve services.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the global injector has already been initialized.
+    ///
+    /// # Example
     /// 
     /// ```rust
     /// // initialize injector
@@ -509,9 +516,9 @@ impl<L : Lock> Injector<L> {
     #[cfg(feature = "globals")]
     #[allow(static_mut_refs)]
     pub fn initialize_ref_cell<F : FnOnce(&mut Injector<crate::sync::RefCell>)>(init_func: F) {
-        // Safety: The injector instance can only be initialized once and then never be mutated again.
-        // After this you can only get an injector reference to retrieve its services.
-        // Meaning that it cannot be mutated when someone has a reference to it.
+        // Safety: Initialization is allowed only once. After initialization,
+        // this static is accessed only through shared references, so its value
+        // cannot be mutated while a returned reference is in use.
         unsafe {
             match &mut REFCELL_INJECTOR_INSTANCE {
                 Some(_) => panic!("The injector cannot be initialized more than once."),
@@ -525,13 +532,13 @@ impl<L : Lock> Injector<L> {
         }
     }
 
-    /// Used to retrieve the services from the [`Injector`]. 
-    /// This [`Injector`] only works with [`std::rc::Rc<RefCell<T>>`].
-    /// 
-    /// This function will panic if the [`Injector`] was not initialized. 
-    /// You can initialize the [`Injector`] using the [`Self::initialize_ref_cell`] function.
+    /// Gets the global [`Injector`] backed by [`std::rc::Rc<RefCell<T>>`].
     ///
-    /// # Example:
+    /// # Panics
+    ///
+    /// Panics if [`Self::initialize_ref_cell`] has not been called first.
+    ///
+    /// # Example
     ///
     /// ```rust
     /// // initialize injector
@@ -547,9 +554,9 @@ impl<L : Lock> Injector<L> {
     #[cfg(feature = "globals")]
     #[allow(static_mut_refs)]
     pub fn global_ref_cell() -> &'static Injector<crate::sync::RefCell> {
-        // Safety: The injector instance can only be initialized once and then never be mutated again.
-        // After this you can only get an injector reference to retrieve its services.
-        // Meaning that it cannot be mutated when someone has a reference to it.
+        // Safety: Initialization is allowed only once. After initialization,
+        // this static is accessed only through shared references, so its value
+        // cannot be mutated while the returned reference is in use.
         unsafe {
             match &REFCELL_INJECTOR_INSTANCE {
                 Some(injector) => injector,
@@ -558,11 +565,9 @@ impl<L : Lock> Injector<L> {
         }
     }
 
-    /// Gets a global reference to the [`Injector`]. 
-    /// This injector only works with [`std::sync::Arc<tokio::sync::Mutex<T>>`].
-    /// Can be used to retrieve services from the [`Injector`]. 
-    /// 
-    /// This [`Injector`] can be used for async applications.
+    /// Gets a read guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<tokio::sync::Mutex<T>>`] for registered values.
+    /// This injector is intended for asynchronous applications.
     ///
     /// To add new services use [`Self::global_async_mutex_mut`].
     ///
@@ -589,10 +594,9 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
 
-    /// Gets a global mutable reference to the [`Injector`]. This injector only works with [`std::sync::Arc<tokio::sync::Mutex<T>>`].
-    /// Can be used to retrieve and add new services into the [`Injector`]. 
-    /// 
-    /// This [`Injector`] can be used for async applications.
+    /// Gets a write guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<tokio::sync::Mutex<T>>`] for registered values.
+    /// This injector is intended for asynchronous applications.
     ///
     /// To get a non-mutable reference use [`Self::global_async_mutex`].
     ///
@@ -619,11 +623,9 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
 
-    /// Gets a global reference to the [`Injector`]. 
-    /// This injector only works with [`std::sync::Arc<tokio::sync::RwLock<T>>`].
-    /// Can be used to retrieve services from the [`Injector`]. 
-    /// 
-    /// This [`Injector`] can be used for async applications.
+    /// Gets a read guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<tokio::sync::RwLock<T>>`] for registered values.
+    /// This injector is intended for asynchronous applications.
     ///
     /// To add new services use [`Self::global_async_rw_mut`].
     ///
@@ -650,9 +652,9 @@ impl<L : Lock> Injector<L> {
             .unwrap()
     }
 
-    /// Gets a global mutable reference to the [`Injector`]. 
-    /// This injector only works with [`std::sync::Arc<tokio::sync::RwLock<T>>`].
-    /// Can be used to retrieve and add new services into the [`Injector`]. 
+    /// Gets a write guard for the global [`Injector`], which uses
+    /// [`std::sync::Arc<tokio::sync::RwLock<T>>`] for registered values.
+    /// This injector is intended for asynchronous applications.
     ///
     /// To get a non-mutable reference use [`Self::global_async_rw`].
     ///
