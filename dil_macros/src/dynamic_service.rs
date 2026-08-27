@@ -1,6 +1,7 @@
 use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
-use syn::{parse_quote, ItemTrait, Type};
+use syn::{parse_quote, ItemTrait, Type, TypeParamBound};
+use crate::helpers::{match_path};
 
 pub struct DynamicService {
     _trait: ItemTrait,
@@ -27,16 +28,38 @@ impl ToTokens for DynamicService {
             
             impl #original_generics dil::Injectable for #ty {}
             
+            #[allow(unsafe_code)]
             unsafe impl #generics dil::cell::AnyMetadata<Lock> for #ty {
-                fn any_vtable(instance: &Lock::Lock<Self>) -> *const () {
-                    let raw = Lock::as_raw(instance);
-                    let dil::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute_copy(&raw) };
-                    vtable
+                fn any_vtable(instance: &Lock::Lock<Self>) -> (std::ptr::NonNull<()>, Option<std::ptr::NonNull<()>>) {
+                    let lock = Lock::as_raw(instance);
+                    let dil::cell::RawFatPtr { vtable: trait_vtable, .. } = unsafe { std::mem::transmute_copy(&lock) };
+                    let dangling = dil::cell::RawFatPtr {
+                        data: std::ptr::NonNull::dangling().as_ptr(),
+                        vtable: trait_vtable,
+                    };
+                    let logger_ptr: *const dyn Logger = unsafe { std::mem::transmute(dangling) };
+                    let any_ptr: *const dyn Any = logger_ptr;
+                    let dil::cell::RawFatPtr { vtable: any_vtable, .. } = unsafe { std::mem::transmute(any_ptr) };
+                    
+                    (unsafe { std::ptr::NonNull::new_unchecked(any_vtable as *mut ()) }, Some(unsafe { std::ptr::NonNull::new_unchecked(trait_vtable as *mut ()) }))
                 }
             }
         };
         
         tree.to_tokens(tokens);
-        self._trait.to_tokens(tokens);
+        
+        let any_super_trait = self._trait.supertraits
+            .iter()
+            .find(|super_trait| match super_trait {
+                TypeParamBound::Trait(_trait) => match_path("std::any::Any", _trait.path.segments.iter()),
+                _ => false,
+            });
+        
+        let mut _trait = self._trait.clone();
+        if any_super_trait.is_none() {
+            _trait.supertraits.push(parse_quote!(std::any::Any));
+        }
+        
+        _trait.to_tokens(tokens);
     }
 }

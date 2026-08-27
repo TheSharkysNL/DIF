@@ -4,9 +4,9 @@ use generic_tests::define;
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use dil::{Component, Injector};
-    use dil::sync::{Mutex, RwLock, RefCell};
+    use dil::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     #[cfg(feature = "async")]
-    use dil::sync::{AsyncMutex, AsyncRwLock};
+    use dil::sync::{AsyncMutexMarker, AsyncRwLockMarker};
     use dil::ComponentLifetime;
     use dil::sync::{Lock, LockBound};
     use crate::injectables::{AnotherLogger, AnotherService, Logger, TestLogger};
@@ -222,20 +222,20 @@ mod tests {
         assert_eq!(lifetime, TypeId::of::<TestLogger>());
     }
 
-    #[instantiate_tests(<Mutex>)]
+    #[instantiate_tests(<MutexMarker>)]
     mod mutex_tests {}
 
-    #[instantiate_tests(<RwLock>)]
+    #[instantiate_tests(<RwLockMarker>)]
     mod rwlock_tests {}
 
-    #[instantiate_tests(<RefCell>)]
+    #[instantiate_tests(<RefCellMarker>)]
     mod refcell_tests {}
 
     #[cfg(feature = "async")]
-    #[instantiate_tests(<AsyncMutex>)]
+    #[instantiate_tests(<AsyncMutexMarker>)]
     mod async_mutex_tests {}
 
     #[cfg(feature = "async")]
-    #[instantiate_tests(<AsyncRwLock>)]
+    #[instantiate_tests(<AsyncRwLockMarker>)]
     mod async_rwlock_tests {}
 }

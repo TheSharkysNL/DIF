@@ -5,7 +5,7 @@ mod tests {
     use std::any::TypeId;
     use dil::sync::{LockBound, Lockable};
     use dil::Injector;
-    use dil::sync::{Mutex, RwLock, RefCell};
+    use dil::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService};
     use dil::sync::Lock;
     use std::ops::Deref;
@@ -236,8 +236,8 @@ mod tests {
             assert_eq!(DROP_COUNT.get(), 0, "Instance should only be dropped after the Injector is dropped.");
             assert_eq!(OTHER_DROP_COUNT.get(), 0, "Instance should only be dropped after the Injector is dropped.");
         }
-        assert_eq!(DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped. After the injector is dropped.");
-        assert_eq!(OTHER_DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped. After the injector is dropped.");
+        assert_eq!(DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped.");
+        assert_eq!(OTHER_DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped.");
     }
 
     #[test]
@@ -307,8 +307,8 @@ mod tests {
             assert_eq!(DROP_COUNT.get(), 0, "Instance should only be dropped after the Injector is dropped.");
             assert_eq!(OTHER_DROP_COUNT.get(), 0, "Instance should only be dropped after the Injector is dropped.");
         }
-        assert_eq!(DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped. After the injector is dropped.");
-        assert_eq!(OTHER_DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped. After the injector is dropped.");
+        assert_eq!(DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped.");
+        assert_eq!(OTHER_DROP_COUNT.get(), 1, "Instance should only be dropped after the Injector is dropped.");
     }
 
     #[test]
@@ -668,12 +668,12 @@ mod tests {
         assert_eq!(Logger::type_id(logger.deref()), TypeId::of::<TestLogger>());
     }
 
-    #[instantiate_tests(<Mutex>)]
+    #[instantiate_tests(<MutexMarker>)]
     mod mutex_tests {}
 
-    #[instantiate_tests(<RwLock>)]
+    #[instantiate_tests(<RwLockMarker>)]
     mod rwlock_tests {}
 
-    #[instantiate_tests(<RefCell>)]
+    #[instantiate_tests(<RefCellMarker>)]
     mod refcell_tests {}
 }

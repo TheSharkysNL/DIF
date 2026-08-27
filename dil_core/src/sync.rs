@@ -31,8 +31,8 @@ pub trait Lock : Default {
 
 /// A mutex lock using [`Arc<StdMutex<T>>`] under the hood.
 #[derive(Default, Debug)]
-pub struct Mutex;
-impl Lock for Mutex {
+pub struct MutexMarker;
+impl Lock for MutexMarker {
     type Lock<T: ?Sized> = Arc<StdMutex<T>>;
     type Pointee<T: ?Sized> = StdMutex<T>;
     
@@ -57,8 +57,8 @@ impl Lock for Mutex {
 
 /// A refcell lock using [`Rc<StdRefCell<T>>`] under the hood.
 #[derive(Default, Debug)]
-pub struct RefCell;
-impl Lock for RefCell {
+pub struct RefCellMarker;
+impl Lock for RefCellMarker {
     type Lock<T: ?Sized> = Rc<StdRefCell<T>>;
     type Pointee<T: ?Sized> = StdRefCell<T>;
 
@@ -83,8 +83,8 @@ impl Lock for RefCell {
 
 /// A read-write lock using [`Arc<StdRwLock<T>>`] under the hood.
 #[derive(Default, Debug)]
-pub struct RwLock;
-impl Lock for RwLock {
+pub struct RwLockMarker;
+impl Lock for RwLockMarker {
     type Lock<T: ?Sized> = Arc<StdRwLock<T>>;
     type Pointee<T: ?Sized> = StdRwLock<T>;
     
@@ -111,9 +111,9 @@ impl Lock for RwLock {
 #[cfg(any(feature = "async"))]
 #[cfg_attr(feature = "async", derive(Default, Debug))]
 #[cfg_attr(doc, doc(cfg(feature = "async")))]
-pub struct AsyncMutex;
+pub struct AsyncMutexMarker;
 #[cfg(feature = "async")]
-impl Lock for AsyncMutex {
+impl Lock for AsyncMutexMarker {
     type Lock<T: ?Sized> = Arc<tokio::sync::Mutex<T>>;
     type Pointee<T: ?Sized> = tokio::sync::Mutex<T>;
 
@@ -140,9 +140,9 @@ impl Lock for AsyncMutex {
 #[cfg(any(feature = "async"))]
 #[cfg_attr(feature = "async", derive(Default, Debug))]
 #[cfg_attr(doc, doc(cfg(feature = "async")))]
-pub struct AsyncRwLock;
+pub struct AsyncRwLockMarker;
 #[cfg(feature = "async")]
-impl Lock for AsyncRwLock {
+impl Lock for AsyncRwLockMarker {
     type Lock<T: ?Sized> = Arc<tokio::sync::RwLock<T>>;
     type Pointee<T: ?Sized> = tokio::sync::RwLock<T>;
     
@@ -165,6 +165,32 @@ impl Lock for AsyncRwLock {
     }
 }
 
+/// A simplified mutex lock used for dependency injection.
+///
+/// To use these locks. You must make sure that the marker struct [`MutexMarker`] is also imported.
+/// Or that the full path is specified in the new function.
+pub type MutexLock<T> = <MutexMarker as Lock>::Lock<T>;
+/// A simplified read-write lock used for dependency injection.
+///
+/// To use these locks. You must make sure that the marker struct [`RwLockMarker`] is also imported.
+/// Or that the full path is specified in the new function.
+pub type RwLock<T> = <RwLockMarker as Lock>::Lock<T>;
+/// A simplified refcell lock used for dependency injection.
+///
+/// To use these locks. You must make sure that the marker struct [`RefCellMarker`] is also imported.
+/// Or that the full path is specified in the new function.
+pub type RefCellLock<T> = <RefCellMarker as Lock>::Lock<T>;
+/// A simplified async mutex lock used for dependency injection.
+///
+/// To use these locks. You must make sure that the marker struct [`AsyncMutexMarker`] is also imported.
+/// Or that the full path is specified in the new function.
+pub type AsyncMutexLock<T> = <AsyncMutexMarker as Lock>::Lock<T>;
+/// A simplified async read-write lock used for dependency injection.
+/// 
+/// To use these locks. You must make sure that the marker struct [`AsyncRwLockMarker`] is also imported.
+/// Or that the full path is specified in the new function.
+pub type AsyncRwLock<T> = <AsyncRwLockMarker as Lock>::Lock<T>;
+
 /// A marker trait used for forcing [`Send`] and/or [`Sync`] on a type based on the lock.
 /// 
 /// # Safety
@@ -174,41 +200,14 @@ impl Lock for AsyncRwLock {
 pub unsafe trait LockBound<T: ?Sized> {}
 
 
-unsafe impl<T: ?Sized + Send> LockBound<T> for Mutex {}
-unsafe impl<T: ?Sized + Send + Sync> LockBound<T> for RwLock {}
-unsafe impl<T: ?Sized> LockBound<T> for RefCell {}
+unsafe impl<T: ?Sized + Send> LockBound<T> for MutexMarker {}
+unsafe impl<T: ?Sized + Send + Sync> LockBound<T> for RwLockMarker {}
+unsafe impl<T: ?Sized> LockBound<T> for RefCellMarker {}
 
 #[cfg(feature = "async")]
-unsafe impl<T: ?Sized + Send> LockBound<T> for AsyncMutex {}
+unsafe impl<T: ?Sized + Send> LockBound<T> for AsyncMutexMarker {}
 #[cfg(feature = "async")]
-unsafe impl<T: ?Sized + Send + Sync> LockBound<T> for AsyncRwLock {}
-
-/// A view into dyn fat pointers
-#[doc(hidden)]
-#[repr(C)]
-pub struct RawFatPtr {
-    pub data: *const (),
-    pub vtable: *const (),
-}
-
-/// Used to coerce Sized types of [`T`] into Unsized types of [`U`]
-/// 
-/// # Safety
-/// `vtable` must be the correct vtable for coercing the pointee for `T` into
-/// the pointee for `U`.
-#[doc(hidden)]
-pub unsafe fn coerce<L: Lock, T : ?Sized, U: ?Sized>(
-    lock: L::Lock<T>,
-    vtable: *const (),
-) -> L::Lock<U> {
-    let raw = L::into_raw(lock);
-
-    let fat = RawFatPtr { data: raw as *const (), vtable };
-    // Safety: T can be coerced to U and the caller supplied the matching vtable.
-    let dyn_ptr: *const L::Pointee<U> = unsafe { std::mem::transmute_copy(&fat) };
-    
-    unsafe { L::from_raw(dyn_ptr) }
-}
+unsafe impl<T: ?Sized + Send + Sync> LockBound<T> for AsyncRwLockMarker {}
 
 /// Used for generic locking of the different [`Lock`] implementations.
 pub trait Lockable<T : ?Sized> {

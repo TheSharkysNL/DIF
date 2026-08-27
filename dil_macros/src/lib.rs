@@ -55,6 +55,7 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 ///         println!("UserService initialized"); // print out when the service is initialized
 ///         Self {
 ///             dependency,
+///             dependency2
 ///         }
 ///     }
 ///     
@@ -62,6 +63,32 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 ///         let dependency_guard = self.dependency.lock()
 ///             .unwrap();
 /// 
+///         // use dependency here...
+///     }
+/// }
+/// ```
+///
+/// With dependency injection. You can also use the simplified type. 
+/// But for this you must have imported the Marker for that specific lock.
+/// For custom locks this will replace the Lock portion of the identifier with Marker.
+/// If you specify the full path to the lock type you won't need to import the marker type.
+/// ```rust
+/// use dil::sync::MutexMarker;
+/// use dil::sync::MutexLock;
+/// 
+/// impl UserService {
+///     pub fn new(dependency: MutexLock<Dependency>) -> Self {
+///         println!("UserService initialized"); // print out when the service is initialized
+///         Self {
+///             dependency,
+///             dependency2
+///         }
+///     }
+///     
+///     pub fn get_user(&mut self, user_id: u32) -> Option<User> {
+///         let dependency_guard = self.dependency.lock()
+///             .unwrap();
+///
 ///         // use dependency here...
 ///     }
 /// }

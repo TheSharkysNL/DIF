@@ -12,19 +12,19 @@ use crate::cell::AnyMetadata;
 pub use crate::container::DependencyIter;
 
 #[cfg(feature = "globals")]
-static MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::Mutex>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+static MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::MutexMarker>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
 
 #[cfg(feature = "globals")]
-static RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::RwLock>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+static RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::RwLockMarker>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
 
 #[cfg(feature = "globals")]
-static mut REFCELL_INJECTOR_INSTANCE: Option<Injector<crate::sync::RefCell>> = None;
+static mut REFCELL_INJECTOR_INSTANCE: Option<Injector<crate::sync::RefCellMarker>> = None;
 
 #[cfg(all(feature = "globals", feature = "async"))]
-static ASYNC_MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncMutex>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+static ASYNC_MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncMutexMarker>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
 
 #[cfg(all(feature = "globals", feature = "async"))]
-static ASYNC_RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncRwLock>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
+static ASYNC_RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncRwLockMarker>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
 
 // /// The global injector instance.
 // #[cfg(any(feature = "async", feature = "multithreaded"))]
@@ -396,7 +396,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(feature = "globals")]
-    pub fn global_mutex() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::Mutex>> {
+    pub fn global_mutex() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::MutexMarker>> {
         MUTEX_INJECTOR_INSTANCE.read()
             .unwrap()
     }
@@ -426,7 +426,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(feature = "globals")]
-    pub fn global_mutex_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::Mutex>> {
+    pub fn global_mutex_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::MutexMarker>> {
         MUTEX_INJECTOR_INSTANCE.write()
             .unwrap()
     }
@@ -454,7 +454,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(feature = "globals")]
-    pub fn global_rw() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::RwLock>> {
+    pub fn global_rw() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::RwLockMarker>> {
         RW_INJECTOR_INSTANCE.read()
             .unwrap()
     }
@@ -484,7 +484,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(feature = "globals")]
-    pub fn global_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::RwLock>> {
+    pub fn global_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::RwLockMarker>> {
         RW_INJECTOR_INSTANCE.write()
             .unwrap()
     }
@@ -515,7 +515,7 @@ impl<L : Lock> Injector<L> {
     /// ```
     #[cfg(feature = "globals")]
     #[allow(static_mut_refs)]
-    pub fn initialize_ref_cell<F : FnOnce(&mut Injector<crate::sync::RefCell>)>(init_func: F) {
+    pub fn initialize_ref_cell<F : FnOnce(&mut Injector<crate::sync::RefCellMarker>)>(init_func: F) {
         // Safety: Initialization is allowed only once. After initialization,
         // this static is accessed only through shared references, so its value
         // cannot be mutated while a returned reference is in use.
@@ -553,7 +553,7 @@ impl<L : Lock> Injector<L> {
     /// ```
     #[cfg(feature = "globals")]
     #[allow(static_mut_refs)]
-    pub fn global_ref_cell() -> &'static Injector<crate::sync::RefCell> {
+    pub fn global_ref_cell() -> &'static Injector<crate::sync::RefCellMarker> {
         // Safety: Initialization is allowed only once. After initialization,
         // this static is accessed only through shared references, so its value
         // cannot be mutated while the returned reference is in use.
@@ -589,7 +589,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(all(feature = "globals", feature = "async"))]
-    pub fn global_async_mutex() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::AsyncMutex>> {
+    pub fn global_async_mutex() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::AsyncMutexMarker>> {
         ASYNC_MUTEX_INJECTOR_INSTANCE.read()
             .unwrap()
     }
@@ -618,7 +618,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(all(feature = "globals", feature = "async"))]
-    pub fn global_async_mutex_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncMutex>> {
+    pub fn global_async_mutex_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncMutexMarker>> {
         ASYNC_MUTEX_INJECTOR_INSTANCE.write()
             .unwrap()
     }
@@ -647,7 +647,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(all(feature = "globals", feature = "async"))]
-    pub fn global_async_rw() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::AsyncRwLock>> {
+    pub fn global_async_rw() -> std::sync::RwLockReadGuard<'static, Injector<crate::sync::AsyncRwLockMarker>> {
         ASYNC_RW_INJECTOR_INSTANCE.read()
             .unwrap()
     }
@@ -676,7 +676,7 @@ impl<L : Lock> Injector<L> {
     /// // use service here...
     /// ```
     #[cfg(all(feature = "globals", feature = "async"))]
-    pub fn global_async_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncRwLock>> {
+    pub fn global_async_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncRwLockMarker>> {
         ASYNC_RW_INJECTOR_INSTANCE.write()
             .unwrap()
     }

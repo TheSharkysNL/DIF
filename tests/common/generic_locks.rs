@@ -4,7 +4,7 @@ use generic_tests::define;
 mod tests {
     use dil::Injector;
     use dil::sync::{Lock, LockBound, Lockable};
-    use dil::sync::{Mutex, RwLock, RefCell};
+    use dil::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     use crate::injectables::{LoggerUser, TestLogger};
     #[test]
     fn add_and_get<L : Lock + LockBound<TestLogger> + LockBound<LoggerUser<L>> + 'static>() 
@@ -30,12 +30,12 @@ mod tests {
         logger_user.write_my_logs();
     }
 
-    #[instantiate_tests(<Mutex>)]
+    #[instantiate_tests(<MutexMarker>)]
     mod mutex_tests {}
 
-    #[instantiate_tests(<RwLock>)]
+    #[instantiate_tests(<RwLockMarker>)]
     mod rwlock_tests {}
 
-    #[instantiate_tests(<RefCell>)]
+    #[instantiate_tests(<RefCellMarker>)]
     mod refcell_tests {}
 }

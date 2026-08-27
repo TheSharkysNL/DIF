@@ -1,6 +1,6 @@
 use dil::service;
 use std::cell::Cell;
-use dil::sync::{Lock, Mutex};
+use dil::sync::{Lock, MutexMarker};
 
 thread_local! {
     pub static DEPENDENT_INITIALIZED: Cell<bool> = Cell::new(false);
@@ -9,7 +9,7 @@ thread_local! {
 
 pub struct Dependent {
     #[allow(dead_code)]
-    dependency: <Mutex as Lock>::Lock<Dependency>,
+    dependency: <MutexMarker as Lock>::Lock<Dependency>,
 }
 
 pub struct Dependency {
@@ -19,7 +19,7 @@ pub struct Dependency {
 
 #[service]
 impl Dependent {
-    pub fn new(dependent: <Mutex as Lock>::Lock<Dependency>) -> Self {
+    pub fn new(dependent: <MutexMarker as Lock>::Lock<Dependency>) -> Self {
         DEPENDENT_INITIALIZED.replace(true);
         
         Self {
@@ -52,7 +52,7 @@ pub struct CircularDependency {
 #[service]
 impl CircularDependency {
     #[allow(unused)]
-    pub fn new(_dependency: <Mutex as Lock>::Lock<CircularDependency>) -> Self {
+    pub fn new(_dependency: <MutexMarker as Lock>::Lock<CircularDependency>) -> Self {
         Self {}
     }
 }

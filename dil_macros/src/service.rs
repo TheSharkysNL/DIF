@@ -1,8 +1,8 @@
 use crate::helpers::{get_associated_generic_type, get_generic_path, get_iterator_impl, get_method, match_path, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::{parse_quote, Error, FnArg, GenericArgument, GenericParam, Generics, ImplItem, Pat, PatType, Type, TypeParamBound};
-use syn::__private::TokenStream2;
+use syn::{parse_quote, Error, FnArg, GenericArgument, GenericParam, Generics, Ident, ImplItem, Pat, PatType, PathArguments, Type, TypeParamBound};
+use syn::__private::{Span, TokenStream2};
 
 pub struct Service {
     item_impl: syn::ItemImpl,
@@ -207,9 +207,9 @@ impl ToTokens for DynamicInjectableImpl<'_> {
                 fn create_dynamic(s: Lock::Lock<Self>) -> Lock::Lock<dyn #_trait #types> {
                     let dangling: *const Self = std::ptr::NonNull::dangling().as_ptr();
                     let fat_ptr = dangling as *const dyn #_trait #types;
-                    let dil::sync::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute(fat_ptr) };
+                    let dil::cell::RawFatPtr { vtable, .. } = unsafe { std::mem::transmute(fat_ptr) };
                     
-                    unsafe { dil::sync::coerce::<Lock, _, _>(s, vtable) }
+                    unsafe { dil::cell::coerce::<Lock, _, _>(s, unsafe { std::ptr::NonNull::new_unchecked(vtable as *mut ()) }) }
                 }
             }
         };
@@ -259,7 +259,19 @@ impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
                                 _ => false,
                             });
 
-                        (parse_quote!(#segment), lock_generic.is_some())
+                        // if there is a first there must always be a last
+                        let last_segment = path.path.segments.last().unwrap();
+                        let last_segment_string = last_segment.ident.to_string();
+                        if last_segment_string.ends_with("Lock") && lock_generic.is_none() {
+                            let mut segments = path.path.segments.clone();
+                            let marker_ident = get_marker_identifier(last_segment_string.as_str(), ty.span());
+                            
+                            segments.last_mut().unwrap().arguments = PathArguments::None;
+                            segments.last_mut().unwrap().ident = marker_ident;
+                            (parse_quote!(#segments), true)
+                        } else {
+                            (parse_quote!(#segment), lock_generic.is_some())
+                        }
                     } else {
                         (Type::Verbatim(TokenStream2::new()), false)
                     }
@@ -312,6 +324,19 @@ impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
                 ty,
                 is_iterator: false,
             })
+        }
+    }
+}
+
+fn get_marker_identifier(name: &str, span: Span) -> Ident {
+    match name {
+        name if name.contains("RwLock") => { 
+            let marker = format!("{}Marker", name);
+            Ident::new(marker.as_str(), span)
+        },
+        name => {
+            let marker = name.replace("Lock", "Marker");
+            Ident::new(marker.as_str(), span)
         }
     }
 }

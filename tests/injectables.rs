@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 pub use dil::service;
 use dil::{dynamic_service};
 use std::cell::{Cell, RefCell};
@@ -72,7 +72,7 @@ impl Drop for AnotherLogger {
 }
 
 #[dynamic_service]
-pub trait Logger : Send + Sync + 'static {
+pub trait Logger : Send + Sync {
     fn write(&mut self, message: &str);
     
     fn type_id(&self) -> TypeId {
