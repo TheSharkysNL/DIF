@@ -184,11 +184,13 @@ pub type RefCellLock<T> = <RefCellMarker as Lock>::Lock<T>;
 ///
 /// To use these locks. You must make sure that the marker struct [`AsyncMutexMarker`] is also imported.
 /// Or that the full path is specified in the new function.
+#[cfg(feature = "async")]
 pub type AsyncMutexLock<T> = <AsyncMutexMarker as Lock>::Lock<T>;
 /// A simplified async read-write lock used for dependency injection.
 /// 
 /// To use these locks. You must make sure that the marker struct [`AsyncRwLockMarker`] is also imported.
 /// Or that the full path is specified in the new function.
+#[cfg(feature = "async")]
 pub type AsyncRwLock<T> = <AsyncRwLockMarker as Lock>::Lock<T>;
 
 /// A marker trait used for forcing [`Send`] and/or [`Sync`] on a type based on the lock.
