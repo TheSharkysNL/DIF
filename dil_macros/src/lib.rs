@@ -46,10 +46,10 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// }
 /// ```
 /// 
-/// With dependency injection. Can be used with any type that implements the dif::sync::Lock trait.
+/// With dependency injection. Can be used with any type that implements the dil::sync::Lock trait.
 /// ```rust
 /// impl UserService {
-///     pub fn new(dependency: <dif::sync::Mutex as dif::sync::Lock>::Lock<Dependency>) -> Self {
+///     pub fn new(dependency: <dil::sync::Mutex as dil::sync::Lock>::Lock<Dependency>) -> Self {
 ///         println!("UserService initialized"); // print out when the service is initialized
 ///         Self {
 ///             dependency,
@@ -67,7 +67,7 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// 
 /// With generic lock. This is not recommended as it is hard to work with but still possible.
 /// ```rust
-/// impl<L : dif::sync::Lock> UserService<L> {
+/// impl<L : dil::sync::Lock> UserService<L> {
 ///     pub fn new(dependency: L::Lock<Dependency>) -> Self {
 ///         println!("UserService initialized"); // print out when the service is initialized
 ///         Self {
@@ -76,7 +76,7 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 ///     }
 ///     
 ///     pub fn get_user(&mut self, user_id: u32) -> Option<User> 
-///         where <L as dif::sync::Lock>::Lock<Dependency> : dif::sync::Lockable<Dependency> // check type is lockable
+///         where <L as dil::sync::Lock>::Lock<Dependency> : dif::sync::Lockable<Dependency> // check type is lockable
 ///     {
 ///         let dependency_guard = self.dependency.write() // get dependency as write
 ///             .unwrap();

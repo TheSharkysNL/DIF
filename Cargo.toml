@@ -19,8 +19,8 @@ criterion = "0.8.2"
 generic-tests = "0.1.3"
 
 [[bench]]
-name = "dif_bench"
-path = "benches/dif_bench.rs"
+name = "dil_bench"
+path = "benches/dil_bench.rs"
 harness = false
 
 [workspace]

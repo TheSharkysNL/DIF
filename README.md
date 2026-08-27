@@ -1,24 +1,24 @@
-# dif
+# dil
 
-[![Crates.io](https://img.shields.io/crates/v/dif.svg)](https://crates.io/crates/dif)
-[![Documentation](https://docs.rs/dif/badge.svg)](https://docs.rs/dif)
+[![Crates.io](https://img.shields.io/crates/v/dil.svg)](https://crates.io/crates/dil)
+[![Documentation](https://docs.rs/dil/badge.svg)](https://docs.rs/dil)
 
-`dif` is a lightweight dependency-injection library for Rust. Register services with an injector, resolve them by type, and let constructors receive their dependencies automatically.
+`dil` is a lightweight dependency-injection library for Rust. Register services with an injector, resolve them by type, and let constructors receive their dependencies automatically.
 
 ## Getting started
 
-Add `dif` with its procedural macros enabled:
+Add `dil` with its procedural macros enabled:
 
 ```toml
 [dependencies]
-dif = { version = "2", features = ["macros"] }
+dil = { version = "2", features = ["macros"] }
 ```
 
 Define a service, register it, and resolve it:
 
 ```rust
-use dif::{service, Injector};
-use dif::sync::Mutex;
+use dil::{service, Injector};
+use dil::sync::Mutex;
 
 struct Logger;
 
@@ -38,15 +38,15 @@ fn main() {
     injector.singleton::<Logger>();
 
     let logger = injector.get::<Logger>().expect("Logger is registered");
-    logger.lock().unwrap().log("Hello from dif!");
+    logger.lock().unwrap().log("Hello from dil!");
 }
 ```
 
 The `#[derive(Service)]` macro can build services from their fields. Fields whose types are registered with the injector are resolved automatically:
 
 ```rust
-use dif::{Injector, Service};
-use dif::sync::Mutex;
+use dil::{Injector, Service};
+use dil::sync::Mutex;
 
 #[derive(Service)]
 struct App {
@@ -66,8 +66,8 @@ injector.transient::<App>();
 Use `#[dynamic_service]` to register implementations behind a trait and resolve one implementation with `get` or all implementations with `get_list`:
 
 ```rust
-use dif::{dynamic_service, service, Injector};
-use dif::sync::Mutex;
+use dil::{dynamic_service, service, Injector};
+use dil::sync::Mutex;
 
 #[dynamic_service]
 trait Logger: Send + Sync + 'static {
@@ -101,12 +101,12 @@ let logger = injector.get::<dyn Logger>().unwrap();
 - `async`: adds Tokio-based async mutex and read-write lock implementations.
 - `globals`: enables global injectors for supported lock types.
 
-By default, `dif` uses thread-safe `Mutex` and `RwLock` implementations. `RefCell` is also available for single-threaded applications.
+By default, `dil` uses thread-safe `Mutex` and `RwLock` implementations. `RefCell` is also available for single-threaded applications.
 
 ## Documentation
 
-- [API documentation on docs.rs](https://docs.rs/dif)
-- [Package on crates.io](https://crates.io/crates/dif)
+- [API documentation on docs.rs](https://docs.rs/dil)
+- [Package on crates.io](https://crates.io/crates/dil)
 
 ## License
 
