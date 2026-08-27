@@ -2,9 +2,9 @@ use generic_tests::define;
 
 #[define]
 mod tests {
-    use dil::Injector;
-    use dil::sync::{Lock, LockBound, Lockable};
-    use dil::sync::{MutexMarker, RwLockMarker, RefCellMarker};
+    use dilian::Injector;
+    use dilian::sync::{Lock, LockBound, Lockable};
+    use dilian::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     use crate::injectables::{LoggerUser, TestLogger};
     #[test]
     fn add_and_get<L : Lock + LockBound<TestLogger> + LockBound<LoggerUser<L>> + 'static>() 

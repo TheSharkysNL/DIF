@@ -3,12 +3,12 @@ use generic_tests::define;
 #[define]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
-    use dil::{Component, Injector};
-    use dil::sync::{MutexMarker, RwLockMarker, RefCellMarker};
+    use dilian::{Component, Injector};
+    use dilian::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     #[cfg(feature = "async")]
-    use dil::sync::{AsyncMutexMarker, AsyncRwLockMarker};
-    use dil::ComponentLifetime;
-    use dil::sync::{Lock, LockBound};
+    use dilian::sync::{AsyncMutexMarker, AsyncRwLockMarker};
+    use dilian::ComponentLifetime;
+    use dilian::sync::{Lock, LockBound};
     use crate::injectables::{AnotherLogger, AnotherService, Logger, TestLogger};
     use std::any::TypeId;
 

@@ -1,9 +1,9 @@
 use std::any::{Any, TypeId};
-pub use dil::service;
-use dil::{dynamic_service};
+pub use dilian::service;
+use dilian::{dynamic_service};
 use std::cell::{Cell, RefCell};
-use dil::sync::{Lock, Lockable};
-use dil::Service;
+use dilian::sync::{Lock, Lockable};
+use dilian::Service;
 
 thread_local! {
     pub static INITIALIZE_COUNT: Cell<u32> = Cell::new(0);

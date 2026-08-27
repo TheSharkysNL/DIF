@@ -2,8 +2,8 @@
 // and test if the logger is actually a valid instance of a logger 
 // instead of it pointing to an invalid piece of memory
 
-use dil::Injector;
-use dil::sync::MutexMarker;
+use dilian::Injector;
+use dilian::sync::MutexMarker;
 use crate::injectables::{reset, Logger, TestLogger, WRITTEN_STRING};
 
 #[test]

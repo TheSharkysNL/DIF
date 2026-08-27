@@ -3,11 +3,11 @@ use generic_tests::define;
 #[define]
 mod tests {
     use std::any::TypeId;
-    use dil::sync::{LockBound, Lockable};
-    use dil::Injector;
-    use dil::sync::{MutexMarker, RwLockMarker, RefCellMarker};
+    use dilian::sync::{LockBound, Lockable};
+    use dilian::Injector;
+    use dilian::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService};
-    use dil::sync::Lock;
+    use dilian::sync::Lock;
     use std::ops::Deref;
 
     #[test]

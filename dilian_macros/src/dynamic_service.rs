@@ -20,26 +20,26 @@ impl ToTokens for DynamicService {
         let mut generics = self._trait.generics.clone();
         let ty: Type = parse_quote!(dyn #ident #generics);
         
-        generics.params.push(parse_quote!(Lock : dil::sync::Lock));
+        generics.params.push(parse_quote!(Lock : dilian::sync::Lock));
         
         // let unique_id_impl = UniqueIdImpl::new(&ty, &self._trait.generics);
         
         let tree = quote! {
             
-            impl #original_generics dil::Injectable for #ty {}
+            impl #original_generics dilian::Injectable for #ty {}
             
             #[allow(unsafe_code)]
-            unsafe impl #generics dil::cell::AnyMetadata<Lock> for #ty {
+            unsafe impl #generics dilian::cell::AnyMetadata<Lock> for #ty {
                 fn any_vtable(instance: &Lock::Lock<Self>) -> (std::ptr::NonNull<()>, Option<std::ptr::NonNull<()>>) {
                     let lock = Lock::as_raw(instance);
-                    let dil::cell::RawFatPtr { vtable: trait_vtable, .. } = unsafe { std::mem::transmute_copy(&lock) };
-                    let dangling = dil::cell::RawFatPtr {
+                    let dilian::cell::RawFatPtr { vtable: trait_vtable, .. } = unsafe { std::mem::transmute_copy(&lock) };
+                    let dangling = dilian::cell::RawFatPtr {
                         data: std::ptr::NonNull::dangling().as_ptr(),
                         vtable: trait_vtable,
                     };
                     let logger_ptr: *const dyn Logger = unsafe { std::mem::transmute(dangling) };
                     let any_ptr: *const dyn Any = logger_ptr;
-                    let dil::cell::RawFatPtr { vtable: any_vtable, .. } = unsafe { std::mem::transmute(any_ptr) };
+                    let dilian::cell::RawFatPtr { vtable: any_vtable, .. } = unsafe { std::mem::transmute(any_ptr) };
                     
                     (unsafe { std::ptr::NonNull::new_unchecked(any_vtable as *mut ()) }, Some(unsafe { std::ptr::NonNull::new_unchecked(trait_vtable as *mut ()) }))
                 }

@@ -1,4 +1,4 @@
-pub use dil_core::*;
+pub use dilian_core::*;
 
 #[cfg(feature = "macros")]
-pub use dil_macros::*;
+pub use dilian_macros::*;

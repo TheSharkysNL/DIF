@@ -1,5 +1,5 @@
 [package]
-name = "dil_macros"
+name = "dilian_macros"
 version = "2.1.1"
 edition = "2024"
 description = "Macros used for simplifying the creation of services used for dependency injection"

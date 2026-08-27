@@ -1,25 +1,25 @@
 [package]
-name = "dil"
+name = "dilian"
 version = "2.1.1"
 edition = "2024"
 license = "MIT"
 description = "A lightweight crate for dependency injection."
 
 [features]
-macros = ["dil_macros"]
-async = ["dil_core/async"]
-globals = ["dil_core/globals"]
+macros = ["dilian_macros"]
+async = ["dilian_core/async"]
+globals = ["dilian_core/globals"]
 
 [dependencies]
-dil_core = { path = "dil_core", version = "2.0.0" }
-dil_macros = { path = "dil_macros", version = "2.0.0", optional = true }
+dilian_core = { path = "dilian_core", version = "2.1.1" }
+dilian_macros = { path = "dilian_macros", version = "2.1.1", optional = true }
 
 [dev-dependencies]
 generic-tests = "0.1.3"
 
 [workspace]
 resolver = "3"
-members = ["dil_core", "dil_macros"]
+members = ["dilian_core", "dilian_macros"]
 
 [package.metadata.docs.rs]
 all-features = true

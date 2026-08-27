@@ -1,6 +1,6 @@
-use dil::service;
+use dilian::service;
 use std::cell::Cell;
-use dil::sync::{Lock, MutexMarker};
+use dilian::sync::{Lock, MutexMarker};
 
 thread_local! {
     pub static DEPENDENT_INITIALIZED: Cell<bool> = Cell::new(false);

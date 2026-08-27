@@ -1,7 +1,7 @@
 // These tests check for ordering to check that ordering doesn't matter for 
 // how the user adds the instances to the injector
 
-use dil::{Component, Injector};
+use dilian::{Component, Injector};
 #[allow(unused_imports)]
 use crate::dependent_dependencies::{reset, CircularDependency, Dependency, Dependent, DEPENDENCY_INITIALIZED, DEPENDENT_INITIALIZED};
 

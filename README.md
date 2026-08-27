@@ -1,24 +1,24 @@
-# dil
+# dilian
 
-[![Crates.io](https://img.shields.io/crates/v/dil.svg)](https://crates.io/crates/dil)
-[![Documentation](https://docs.rs/dil/badge.svg)](https://docs.rs/dil)
+[![Crates.io](https://img.shields.io/crates/v/dilian.svg)](https://crates.io/crates/dilian)
+[![Documentation](https://docs.rs/dilian/badge.svg)](https://docs.rs/dilian)
 
-`dil` is a lightweight dependency-injection library for Rust. Register services with an injector, resolve them by type, and let constructors receive their dependencies automatically.
+`dilian` is a lightweight dependency-injection library for Rust. Register services with an injector, resolve them by type, and let constructors receive their dependencies automatically.
 
 ## Getting started
 
-Add `dil` with its procedural macros enabled:
+Add `dilian` with its procedural macros enabled:
 
 ```toml
 [dependencies]
-dil = { version = "2", features = ["macros"] }
+dilian = { version = "2", features = ["macros"] }
 ```
 
 Define a service, register it, and resolve it:
 
 ```rust
-use dil::{service, Injector};
-use dil::sync::Mutex;
+use dilian::{service, Injector};
+use dilian::sync::Mutex;
 
 struct Logger;
 
@@ -38,15 +38,15 @@ fn main() {
     injector.singleton::<Logger>();
 
     let logger = injector.get::<Logger>().expect("Logger is registered");
-    logger.lock().unwrap().log("Hello from dil!");
+    logger.lock().unwrap().log("Hello from dilian!");
 }
 ```
 
 The `#[derive(Service)]` macro can build services from their fields. Fields whose types are registered with the injector are resolved automatically:
 
 ```rust
-use dil::{Injector, Service};
-use dil::sync::Mutex;
+use dilian::{Injector, Service};
+use dilian::sync::Mutex;
 
 #[derive(Service)]
 struct App {
@@ -66,8 +66,8 @@ injector.transient::<App>();
 Use `#[dynamic_service]` to register implementations behind a trait and resolve one implementation with `get` or all implementations with `get_list`:
 
 ```rust
-use dil::{dynamic_service, service, Injector};
-use dil::sync::Mutex;
+use dilian::{dynamic_service, service, Injector};
+use dilian::sync::Mutex;
 
 #[dynamic_service]
 trait Logger: Send + Sync + 'static {
@@ -101,12 +101,12 @@ let logger = injector.get::<dyn Logger>().unwrap();
 - `async`: adds Tokio-based async mutex and read-write lock implementations.
 - `globals`: enables global injectors for supported lock types.
 
-By default, `dil` uses thread-safe `Mutex` and `RwLock` implementations. `RefCell` is also available for single-threaded applications.
+By default, `dilian` uses thread-safe `Mutex` and `RwLock` implementations. `RefCell` is also available for single-threaded applications.
 
 ## Documentation
 
-- [API documentation on docs.rs](https://docs.rs/dil)
-- [Package on crates.io](https://crates.io/crates/dil)
+- [API documentation on docs.rs](https://docs.rs/dilian)
+- [Package on crates.io](https://crates.io/crates/dilian)
 
 ## License
 
