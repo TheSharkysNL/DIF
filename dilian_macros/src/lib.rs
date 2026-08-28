@@ -68,12 +68,11 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// }
 /// ```
 ///
-/// With dependency injection. You can also use the simplified type. 
-/// But for this you must have imported the Marker for that specific lock.
+/// With dependency injection. You can also use the simplified type.
 /// For custom locks this will replace the Lock portion of the identifier with Marker.
+/// You'll need to import the custom marker if it cannot be found.
 /// If you specify the full path to the lock type you won't need to import the marker type.
 /// ```rust
-/// use dilian::sync::MutexMarker;
 /// use dilian::sync::MutexLock;
 /// 
 /// impl UserService {

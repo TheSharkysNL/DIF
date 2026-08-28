@@ -1,8 +1,9 @@
 use crate::helpers::{get_associated_generic_type, get_generic_path, get_iterator_impl, get_method, match_path, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
-use syn::{parse_quote, Error, FnArg, GenericArgument, GenericParam, Generics, Ident, ImplItem, Pat, PatType, PathArguments, Type, TypeParamBound};
+use syn::{parse_quote, Error, FnArg, GenericArgument, GenericParam, Generics, Ident, ImplItem, Pat, PatType, Type, TypeParamBound};
 use syn::__private::{Span, TokenStream2};
+use syn::parse::{Parse, Parser};
 
 pub struct Service {
     item_impl: syn::ItemImpl,
@@ -263,12 +264,9 @@ impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
                         let last_segment = path.path.segments.last().unwrap();
                         let last_segment_string = last_segment.ident.to_string();
                         if last_segment_string.ends_with("Lock") && lock_generic.is_none() {
-                            let mut segments = path.path.segments.clone();
-                            let marker_ident = get_marker_identifier(last_segment_string.as_str(), ty.span());
+                            let marker_type = get_marker_type(last_segment_string.as_str(), ty.span());
                             
-                            segments.last_mut().unwrap().arguments = PathArguments::None;
-                            segments.last_mut().unwrap().ident = marker_ident;
-                            (parse_quote!(#segments), true)
+                            (marker_type, true)
                         } else {
                             (parse_quote!(#segment), lock_generic.is_some())
                         }
@@ -328,15 +326,22 @@ impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
     }
 }
 
-fn get_marker_identifier(name: &str, span: Span) -> Ident {
+fn get_marker_type(name: &str, span: Span) -> Type {
     match name {
-        name if name.contains("RwLock") => { 
-            let marker = format!("{}Marker", name);
-            Ident::new(marker.as_str(), span)
+        "RwLock" | "AsyncRwLock" => {
+            let marker = format!("dilian::sync::{}Marker", name);
+
+            Type::parse.parse_str(marker.as_str()).unwrap()
         },
+        "MutexLock" | "AsyncMutexLock" | "RefCellLock" => {
+            let marker = format!("dilian::sync::{}", name.replace("Lock", "Marker"));
+            
+            Type::parse.parse_str(marker.as_str()).unwrap()
+        }
         name => {
             let marker = name.replace("Lock", "Marker");
-            Ident::new(marker.as_str(), span)
+            let ident = Ident::new(marker.as_str(), span);
+            parse_quote!(#ident)
         }
     }
 }
