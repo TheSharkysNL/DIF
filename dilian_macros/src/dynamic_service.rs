@@ -37,8 +37,8 @@ impl ToTokens for DynamicService {
                         data: std::ptr::NonNull::dangling().as_ptr(),
                         vtable: trait_vtable,
                     };
-                    let logger_ptr: *const dyn Logger = unsafe { std::mem::transmute(dangling) };
-                    let any_ptr: *const dyn Any = logger_ptr;
+                    let trait_ptr: *const #ty = unsafe { std::mem::transmute(dangling) };
+                    let any_ptr: *const dyn std::any::Any = trait_ptr;
                     let dilian::cell::RawFatPtr { vtable: any_vtable, .. } = unsafe { std::mem::transmute(any_ptr) };
                     
                     (unsafe { std::ptr::NonNull::new_unchecked(any_vtable as *mut ()) }, Some(unsafe { std::ptr::NonNull::new_unchecked(trait_vtable as *mut ()) }))

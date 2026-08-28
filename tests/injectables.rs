@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId};
+use std::any::{TypeId};
 pub use dilian::service;
 use dilian::{dynamic_service};
 use std::cell::{Cell, RefCell};
