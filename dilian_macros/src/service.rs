@@ -123,7 +123,7 @@ impl ToTokens for FromInjectorImpl<'_> {
                                 },
                                 (None, false) => {
                                     Ok(quote! {
-                                        let #name = injector.produce::<#ty>();
+                                        let #name = injector.produce::<#ty>().expect(concat!("The type '", stringify!(#ty), "' has not been added as a service."));
                                     })
                                 },
                                 (Some(_), true) => {
