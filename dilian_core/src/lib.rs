@@ -372,27 +372,29 @@ impl<L : Lock> Injector<L> {
     pub fn component<C : ComponentLifetimeChecker<L> + Clone + 'static>(&mut self, component: Component<L, C>) {
         self.container.register(component)
     }
+}
 
+impl Injector<crate::sync::MutexMarker> {
     /// Gets a read guard for the global [`Injector`], which uses
     /// [`std::sync::Arc<Mutex<T>>`] for registered values.
     ///
     /// Use [`Self::global_mutex_mut`] to register additional services.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// // get mutable injector for adding services.
     /// let injector = Injector::global_mutex_mut();
-    /// 
+    ///
     /// // add singleton
     /// injector.singleton::<ConsoleLogger>();
-    /// 
+    ///
     /// // code here...
-    /// 
+    ///
     /// // retrieve service here
     /// let injector = Injector::global_mutex();
     /// let logger = injector.get::<ConsoleLogger>();
-    /// 
+    ///
     /// // use service here...
     /// ```
     #[cfg(feature = "globals")]
@@ -488,7 +490,7 @@ impl<L : Lock> Injector<L> {
         RW_INJECTOR_INSTANCE.write()
             .unwrap()
     }
-    
+
     /// Initializes the global [`Injector`] backed by
     /// [`std::rc::Rc<RefCell<T>>`].
     ///
@@ -501,14 +503,14 @@ impl<L : Lock> Injector<L> {
     /// Panics if the global injector has already been initialized.
     ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// // initialize injector
     /// Injector::initialize_ref_cell(|injector| {
     ///     // add ConsoleLogger singleton
     ///     injector.singleton::<ConsoleLogger>();
     /// });
-    /// 
+    ///
     /// // retrieve injector and get the logger.
     /// let injector = Injector::global_ref_cell();
     /// let logger = injector.get::<ConsoleLogger>();
@@ -572,7 +574,7 @@ impl<L : Lock> Injector<L> {
     /// To add new services use [`Self::global_async_mutex_mut`].
     ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// // get mutable injector for adding services.
     /// let injector = Injector::global_async_mutex_mut();
