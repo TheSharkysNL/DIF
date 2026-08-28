@@ -7,12 +7,14 @@ use syn::parse::{Parse, Parser};
 
 pub struct Service {
     item_impl: syn::ItemImpl,
+    lock_type: Option<Type>,
 }
 
 pub struct FromInjectorImpl<'a> {
     new_method: Option<&'a syn::ImplItemFn>,
     ty: &'a syn::Type,
     generics: &'a syn::Generics,
+    lock_type: Option<&'a Type>,
 }
 
 pub struct DynamicInjectableImpl<'a> {
@@ -26,10 +28,11 @@ pub struct ParameterType<'a> {
     is_iterator: bool,
 }
 
-impl From<syn::ItemImpl> for Service {
-    fn from(item_impl: syn::ItemImpl) -> Self {
+impl From<(syn::ItemImpl, Option<Type>)> for Service {
+    fn from((item_impl, lock_type): (syn::ItemImpl, Option<Type>)) -> Self {
         Self {
             item_impl,
+            lock_type
         }
     }
 }
@@ -51,7 +54,8 @@ impl ToTokens for Service {
             let from_injector_impl = FromInjectorImpl {
                 new_method,
                 ty: &self.item_impl.self_ty,
-                generics
+                generics,
+                lock_type: self.lock_type.as_ref(),
             };
             
             from_injector_impl.into_token_stream()
@@ -152,9 +156,10 @@ impl ToTokens for FromInjectorImpl<'_> {
             }, Vec::new(), None)  
         };
         
-        let lock_type = match lock_type {
-            Some(lock_type) => lock_type.clone(),
-            None => {
+        let lock_type = match (self.lock_type, lock_type) {
+            (Some(lock_type), _) => lock_type.clone(),
+            (None, Some(lock_type)) => lock_type,
+            _ => {
                 generics.params.push(parse_quote!(Lock : dilian::sync::Lock));
                 
                 parse_quote!(Lock)
@@ -204,7 +209,9 @@ impl ToTokens for DynamicInjectableImpl<'_> {
         
         let tree = quote! {                
             #[allow(unsafe_code)]
-            impl #generics dilian::DynamicInjectable<dyn #_trait #types, Lock> for #ty {
+            impl #generics dilian::DynamicInjectable<dyn #_trait #types, Lock> for #ty 
+                where #ty : dilian::FromInjector<Lock>
+            {
                 fn create_dynamic(s: Lock::Lock<Self>) -> Lock::Lock<dyn #_trait #types> {
                     let dangling: *const Self = std::ptr::NonNull::dangling().as_ptr();
                     let fat_ptr = dangling as *const dyn #_trait #types;

@@ -7,7 +7,8 @@ use crate::dynamic_service::DynamicService;
 use crate::service::Service;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
+use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl, Type};
+use syn::parse::{Parse, Parser};
 
 /// Turns the type in the impl block into an injectable type.
 /// It uses the `pub fn new() -> Self` method as the factory method.
@@ -18,7 +19,9 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 /// # Examples
 /// 
 /// With a factory method. If you do not need initialization, you can use
-/// `#[derive(Service)]` instead.
+/// `#[derive(Service)]` instead. 
+/// 
+/// You can also specify lock choice using #[service(MutexMarker)].
 /// ```rust
 /// #[service]
 /// impl ConsoleLogger {
@@ -120,9 +123,9 @@ use syn::{parse_macro_input, parse_quote, GenericParam, ItemImpl};
 #[proc_macro_attribute]
 pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemImpl);
-    parse_macro_input!(args as syn::parse::Nothing);
+    let ty = Type::parse.parse2(args.into()).ok();
     
-    Service::from(input)
+    Service::from((input, ty))
         .into_token_stream()
         .into()
 }
@@ -190,7 +193,7 @@ pub fn service_derive(input: TokenStream) -> TokenStream {
         }
     };
     
-    Service::from(item_impl)
+    Service::from((item_impl, None))
         .into_token_stream()
         .into()
 }
