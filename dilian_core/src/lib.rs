@@ -161,7 +161,7 @@ impl<L : Lock> Injector<L> {
     /// 
     /// If a required component is not found in the injector.
     /// 
-    /// # Examples
+    /// # Example
     /// 
     /// ```
     /// #[derive(Service)]
@@ -184,8 +184,9 @@ impl<L : Lock> Injector<L> {
     /// // Use dependent below
     /// 
     /// ```
-    pub fn produce<T : FromInjector<L>>(&self) -> T {
-        T::from_injector(self)
+    pub fn produce<T : 'static>(&self) -> Option<T> {
+        self.container
+            .produce(self)
     }
     
     /// Registers a singleton component with the injector.

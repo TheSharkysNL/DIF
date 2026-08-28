@@ -82,6 +82,14 @@ impl<L : Lock> DIContainer<L> {
                 .create_or_clone::<T>(injector)
             )
     }
+    
+    pub fn produce<T : 'static>(&self, injector: &Injector<L>) -> Option<T> {
+        self.get_underlying(TypeId::of::<T>(), type_name::<T>())
+            .map(|x| x.first()
+                .create_or_clone
+                .create_new::<T>(injector)
+            )
+    }
 
     pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector<L>) -> DependencyIter<'a, T, L> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
@@ -383,6 +391,19 @@ trait CreateOrCloneLifetime<L : Lock> {
     }
 
     fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L>;
+    
+    fn create_new_any(&self, injector: &Injector<L>) -> InstanceCell<L>;
+    
+    fn create_new<T : 'static>(&self, injector: &Injector<L>) -> T {
+        match L::try_into_inner(
+            self.create_new_any(injector)
+                .get::<T>()
+                .expect("The type T given was invalid for this operation.")
+        ) {
+            Ok(value) => value,
+            Err(_) => unreachable!("There should be no other references to the Lock as it was just created.")
+        }
+    }
 }
 
 impl<L : Lock> CreateOrClone<L> {
@@ -406,6 +427,18 @@ impl<L : Lock> CreateOrClone<L> {
                 item.create_or_clone_any(injector),
             CreateOrClone::Custom(item) =>
                 item.create_or_clone_any(injector),
+            CreateOrClone::Empty => unreachable!("Empty create or clone type should never be used"),
+        }
+    }
+    
+    pub fn create_new<T : 'static>(&self, injector: &Injector<L>) -> T {
+        match self {
+            CreateOrClone::Singleton(item) =>
+                item.create_new(injector),
+            CreateOrClone::Transient(item) =>
+                item.create_new(injector),
+            CreateOrClone::Custom(item) =>
+                item.create_new(injector),
             CreateOrClone::Empty => unreachable!("Empty create or clone type should never be used"),
         }
     }
@@ -437,6 +470,10 @@ impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneSingleton<L> {
 
         func_value
     }
+
+    fn create_new_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
+        self.func.call(injector)
+    }
 }
 
 impl<L : Lock> CreateOrCloneTransient<L> {
@@ -450,6 +487,10 @@ impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneTransient<L> {
         let func_value = self.func.call(&injector);
         func_value
     }
+
+    fn create_new_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
+        self.func.call(injector)
+    }
 }
 
 impl<L : Lock> CreateOrCloneCustom<L> {
@@ -461,7 +502,7 @@ impl<L : Lock> CreateOrCloneCustom<L> {
         }
     }
     
-    fn create_new(&self, injector: &Injector<L>, mut value_guard: MutexGuard<Option<InstanceCell<L>>>) -> InstanceCell<L> {
+    fn create_new_cell(&self, injector: &Injector<L>, mut value_guard: MutexGuard<Option<InstanceCell<L>>>) -> InstanceCell<L> {
         let func_value = self.func.call(&injector);
         
         value_guard
@@ -480,7 +521,7 @@ impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneCustom<L> {
             let value = self.value.lock()
                 .unwrap();
 
-            self.create_new(injector, value)
+            self.create_new_cell(injector, value)
         } else {
             // Lock should never be poisoned
             let value = self.value.lock()
@@ -489,9 +530,13 @@ impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneCustom<L> {
                 Some(value) =>
                     value.clone(),
                 None =>
-                    self.create_new(injector, value)
+                    self.create_new_cell(injector, value)
             }
         }
+    }
+
+    fn create_new_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
+        self.func.call(injector)
     }
 }
 

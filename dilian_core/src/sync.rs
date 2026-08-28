@@ -27,6 +27,11 @@ pub trait Lock : Default {
 
     /// Creates a raw, non-owning view of the underlying [`Self::Pointee`].
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T>;
+    
+    /// Gets the underlying data of the lock.
+    /// 
+    /// If the lock has another reference this will return an Err result containing the lock.
+    fn try_into_inner<T>(lock: Self::Lock<T>) -> Result<T, Self::Lock<T>>;
 }
 
 /// A mutex lock using [`Arc<StdMutex<T>>`] under the hood.
@@ -52,6 +57,11 @@ impl Lock for MutexMarker {
     
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
         Arc::as_ptr(lock)
+    }
+    
+    fn try_into_inner<T>(lock: Self::Lock<T>) -> Result<T, Self::Lock<T>> {
+        Arc::try_unwrap(lock)
+            .map(|v| v.into_inner().unwrap_or_else(|e| e.into_inner()))
     }
 }
 
@@ -79,6 +89,11 @@ impl Lock for RefCellMarker {
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
         Rc::as_ptr(lock)
     }
+
+    fn try_into_inner<T>(lock: Self::Lock<T>) -> Result<T, Self::Lock<T>> {
+        Rc::try_unwrap(lock)
+            .map(|v| v.into_inner())
+    }
 }
 
 /// A read-write lock using [`Arc<StdRwLock<T>>`] under the hood.
@@ -104,6 +119,11 @@ impl Lock for RwLockMarker {
     
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
         Arc::as_ptr(lock)
+    }
+    
+    fn try_into_inner<T>(lock: Self::Lock<T>) -> Result<T, Self::Lock<T>> {
+        Arc::try_unwrap(lock)
+            .map(|v| v.into_inner().unwrap_or_else(|e| e.into_inner()))
     }
 }
 
@@ -134,6 +154,11 @@ impl Lock for AsyncMutexMarker {
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
         Arc::as_ptr(lock)
     }
+
+    fn try_into_inner<T>(lock: Self::Lock<T>) -> Result<T, Self::Lock<T>> {
+        Arc::try_unwrap(lock)
+            .map(|v| v.into_inner())
+    }
 }
 
 /// An async read-write lock using [`Arc<tokio::sync::RwLock<T>>`] under the hood
@@ -162,6 +187,11 @@ impl Lock for AsyncRwLockMarker {
     
     fn as_raw<T: ?Sized>(lock: &Self::Lock<T>) -> *const Self::Pointee<T> {
         Arc::as_ptr(lock)
+    }
+    
+    fn try_into_inner<T>(lock: Self::Lock<T>) -> Result<T, Self::Lock<T>> {
+        Arc::try_unwrap(lock)
+            .map(|v| v.into_inner())
     }
 }
 

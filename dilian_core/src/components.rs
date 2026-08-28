@@ -134,17 +134,18 @@ struct ComponentBuilderDynItem<L : Lock> {
 }
 
 /// A builder for creating the component for the type `T`. Can be initialized via the `Component`'s methods.
-pub struct ComponentBuilder<T, L : Lock, C> {
+pub struct ComponentBuilder<T, L : Lock, C, F> {
     lifetime: ComponentLifetime<C>,
     factory_func: Option<Box<DynInstanceCellFn<L>>>,
     
     dynamics: Vec<ComponentBuilderDynItem<L>>,
     phantom: PhantomData<T>,
+    phantom_fn: PhantomData<F>,
 }
 
 impl<L : Lock> Component<L, ()> {
     /// Creates a singleton component builder.
-    pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L, ()>
+    pub fn singleton<T : 'static>() -> ComponentBuilder<T, L, (), ()>
         where L : LockBound<T>
     {
         ComponentBuilder {
@@ -152,11 +153,12 @@ impl<L : Lock> Component<L, ()> {
             factory_func: None,
             dynamics: Vec::new(),
             phantom: PhantomData,
+            phantom_fn: PhantomData,
         }
     }
 
     /// Creates a transient component builder.
-    pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L, ()>
+    pub fn transient<T : 'static>() -> ComponentBuilder<T, L, (), ()>
         where L : LockBound<T>
     {
         ComponentBuilder {
@@ -164,11 +166,12 @@ impl<L : Lock> Component<L, ()> {
             factory_func: None,
             dynamics: Vec::new(),
             phantom: PhantomData,
+            phantom_fn: PhantomData,
         }
     }
     
     /// Creates a component builder containing a custom lifetime.
-    pub fn custom<T : FromInjector<L> + 'static, C : ComponentLifetimeChecker<L> + Clone>(checker: C) -> ComponentBuilder<T, L, C> 
+    pub fn custom<T : 'static, C : ComponentLifetimeChecker<L> + Clone>(checker: C) -> ComponentBuilder<T, L, C, ()> 
         where L : LockBound<T>
     {
         ComponentBuilder {
@@ -176,14 +179,15 @@ impl<L : Lock> Component<L, ()> {
             factory_func: None,
             dynamics: Vec::new(),
             phantom: PhantomData,
+            phantom_fn: PhantomData,
         }
     }
 }
 
-impl<T : FromInjector<L> + 'static, L : Lock, C> ComponentBuilder<T, L, C> {
+impl<T : 'static, L : Lock, C> ComponentBuilder<T, L, C, ()> {
     /// Configures a custom factory function for creating the type.
-    pub fn with_factory(self, factory: impl Fn(&Injector<L>) -> T + Send + Sync + 'static) -> Self {
-        Self {
+    pub fn with_factory<F2 : Fn(&Injector<L>) -> T + Send + Sync + 'static>(self, factory: F2) -> ComponentBuilder<T, L, C, F2> {
+        ComponentBuilder {
             lifetime: self.lifetime,
             factory_func: Some(Box::new(move |injector: &Injector<L>| {
                 let mutex = L::new(factory(injector));
@@ -191,9 +195,22 @@ impl<T : FromInjector<L> + 'static, L : Lock, C> ComponentBuilder<T, L, C> {
             }) as Box<_>),
             dynamics: Vec::new(),
             phantom: PhantomData,
+            phantom_fn: PhantomData,
         }
     }
 
+    /// Builds the component.
+    pub fn build(self) -> Component<L, C> 
+        where T : FromInjector<L>
+    {
+        self.build_internal(ComponentCreateFunction::Pointer(|injector: &Injector<L>| {
+            let mutex = L::new(T::from_injector(injector));
+            InstanceCell::new(mutex)
+        }))
+    }
+}
+
+impl<T : 'static, L : Lock, C, F> ComponentBuilder<T, L, C, F> {
     /// Makes `T` retrievable through the injector as a dynamic type.
     /// This is useful when another crate provides the dynamic trait
     /// implementation to be injected.
@@ -221,20 +238,22 @@ impl<T : FromInjector<L> + 'static, L : Lock, C> ComponentBuilder<T, L, C> {
             factory_func: self.factory_func,
             dynamics,
             phantom: PhantomData,
+            phantom_fn: PhantomData,
         }
     }
+    
+    pub fn build_with_factory(mut self) -> Component<L, C> 
+        where F : Fn(&Injector<L>) -> T + Send + Sync + 'static
+    {
+        let create_func = self.factory_func.take()
+            .unwrap();
+        self.build_internal(ComponentCreateFunction::Boxed(create_func))
+    }
 
-    /// Builds the component.
-    pub fn build(self) -> Component<L, C> {
+    fn build_internal(self, create_func: ComponentCreateFunction<L>) -> Component<L, C> {
         Component {
             lifetime: self.lifetime,
-            create_func: match self.factory_func {
-                Some(x) => ComponentCreateFunction::Boxed(x),
-                None => ComponentCreateFunction::Pointer(|injector: &Injector<L>| {
-                    let mutex = L::new(T::from_injector(injector));
-                    InstanceCell::new(mutex)
-                }),
-            },
+            create_func,
             unique_id: TypeId::of::<T>(),
             dynamics: self.dynamics
                 .into_iter()

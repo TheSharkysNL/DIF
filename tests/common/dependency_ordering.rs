@@ -2,6 +2,7 @@
 // how the user adds the instances to the injector
 
 use dilian::{Component, Injector};
+use dilian_core::sync::MutexMarker;
 #[allow(unused_imports)]
 use crate::dependent_dependencies::{reset, CircularDependency, Dependency, Dependent, DEPENDENCY_INITIALIZED, DEPENDENT_INITIALIZED};
 
@@ -50,14 +51,14 @@ pub fn other_ordering() {
 #[test]
 pub fn factory_function() {
     // Arrange
-    let mut injector = Injector::new();
+    let mut injector = Injector::<MutexMarker>::new();
 
     injector.singleton::<Dependency>();
     injector.component(Component::singleton()
         .with_factory(|injector| {
             Dependent::new(injector.get().unwrap())
         })
-        .build()
+        .build_with_factory()
     );
 
     reset();
@@ -75,13 +76,13 @@ pub fn factory_function() {
 #[test]
 pub fn factory_function_other_ordering() {
     // Arrange
-    let mut injector = Injector::new();
+    let mut injector = Injector::<MutexMarker>::new();
 
     injector.component(Component::singleton()
         .with_factory(|injector| {
             Dependent::new(injector.get().unwrap())
         })
-        .build()
+        .build_with_factory()
     );
     injector.singleton::<Dependency>();
 

@@ -1,11 +1,12 @@
 use dilian::Injector;
+use dilian_core::sync::MutexMarker;
 use crate::dependent_dependencies::{Dependency, Dependent, DEPENDENCY_INITIALIZED, DEPENDENT_INITIALIZED};
 
 #[test]
 #[should_panic]
 pub fn produce_dependency_not_found() {
     // Arrange
-    let injector = Injector::new();
+    let injector = Injector::<MutexMarker>::new();
     
     // Act + Assert
     injector.produce::<Dependent>();
@@ -14,7 +15,7 @@ pub fn produce_dependency_not_found() {
 #[test]
 pub fn produce_singleton() {
     // Arrange
-    let mut injector = Injector::new();
+    let mut injector = Injector::<MutexMarker>::new();
     
     injector.singleton::<Dependency>();
     
@@ -29,7 +30,7 @@ pub fn produce_singleton() {
 #[test]
 pub fn produce_transient() {
     // Arrange
-    let mut injector = Injector::new();
+    let mut injector = Injector::<MutexMarker>::new();
 
     injector.transient::<Dependency>();
 

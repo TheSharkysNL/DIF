@@ -95,7 +95,7 @@ mod tests {
                     created_clone.store(true, Ordering::SeqCst);
                     TestLogger {}
                 })
-                .build()
+                .build_with_factory()
         );
 
         // Assert
@@ -136,7 +136,7 @@ mod tests {
                     TestLogger {}
                 })
                 .with_dynamic::<dyn Logger>()
-                .build()
+                .build_with_factory()
         );
 
         // Assert
