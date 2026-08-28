@@ -369,7 +369,7 @@ impl<L : Lock> Injector<L> {
     ///  ); // this will use one singular underlying ConsoleLogger type.
     /// ```
     /// 
-    pub fn component(&mut self, component: Component<L>) {
+    pub fn component<C : ComponentLifetimeChecker<L> + Clone + 'static>(&mut self, component: Component<L, C>) {
         self.container.register(component)
     }
 

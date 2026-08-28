@@ -1,7 +1,7 @@
 use crate::cell::InstanceCell;
 use crate::components::{Component, ComponentCreateFunction, ComponentLifetime};
 use crate::sync::{InstanceCellLock, Lock};
-use crate::Injector;
+use crate::{ComponentLifetimeChecker, Injector};
 use rustc_hash::FxBuildHasher;
 use std::any::{type_name, TypeId};
 use std::collections::hash_map::Entry;
@@ -10,7 +10,7 @@ use std::fmt::Write;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref};
-use std::sync::RwLock;
+use std::sync::{Mutex, MutexGuard, RwLock};
 
 pub(crate) type DynInstanceCellFn<L> = dyn Fn(&Injector<L>) -> InstanceCell<L> + Send + Sync;
 
@@ -25,7 +25,7 @@ pub(crate) struct DIContainer<L : Lock> {
 }
 
 impl<L : Lock> DIContainer<L> {
-    pub fn register(&mut self, component: Component<L>) {
+    pub fn register<C : ComponentLifetimeChecker<L> + Clone + 'static>(&mut self, component: Component<L, C>) {
         let components: Vec<ContainerComponent<L>> = component.into();
         for component in components {
             let unique_id = component.unique_id;
@@ -298,15 +298,16 @@ pub(crate) struct ContainerComponent<L : Lock> {
     dynamic_id: Option<TypeId>,
 }
 
-impl<L : Lock> Into<Vec<ContainerComponent<L>>> for Component<L> {
+impl<L : Lock, C : Clone + ComponentLifetimeChecker<L> + 'static> Into<Vec<ContainerComponent<L>>> for Component<L, C> {
     fn into(self) -> Vec<ContainerComponent<L>> {
         let mut components = Vec::with_capacity(1 + self.dynamics.len());
 
         components
             .push(ContainerComponent {
-                create_or_clone: match self.lifetime {
+                create_or_clone: match self.lifetime.clone() {
                     ComponentLifetime::Singleton => CreateOrClone::Singleton(CreateOrCloneSingleton::new(self.create_func)),
-                    ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(self.create_func))
+                    ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(self.create_func)),
+                    ComponentLifetime::Custom(checker) => CreateOrClone::Custom(CreateOrCloneCustom::new(self.create_func, checker)),
                 },
                 dynamic_id: None,
                 unique_id: self.unique_id,
@@ -316,9 +317,10 @@ impl<L : Lock> Into<Vec<ContainerComponent<L>>> for Component<L> {
         
         for dynamic_component in self.dynamics {
             components.push(ContainerComponent {
-                create_or_clone: match self.lifetime {
+                create_or_clone: match self.lifetime.clone() {
                     ComponentLifetime::Singleton => CreateOrClone::Singleton(CreateOrCloneSingleton::new(dynamic_component.create_func)),
-                    ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(dynamic_component.create_func))
+                    ComponentLifetime::Transient => CreateOrClone::Transient(CreateOrCloneTransient::new(dynamic_component.create_func)),
+                    ComponentLifetime::Custom(checker) => CreateOrClone::Custom(CreateOrCloneCustom::new(dynamic_component.create_func, checker)),
                 },
                 dynamic_id: Some(self.unique_id),
                 unique_id: dynamic_component.unique_id,
@@ -334,6 +336,7 @@ impl<L : Lock> Into<Vec<ContainerComponent<L>>> for Component<L> {
 enum CreateOrClone<L : Lock> {
     Singleton(CreateOrCloneSingleton<L>),
     Transient(CreateOrCloneTransient<L>),
+    Custom(CreateOrCloneCustom<L>),
     Empty,
 }
 
@@ -346,12 +349,30 @@ struct CreateOrCloneTransient<L : Lock> {
     func: ComponentCreateFunction<L>,
 }
 
+struct CreateOrCloneCustom<L : Lock> {
+    func: ComponentCreateFunction<L>,
+    value: Mutex<Option<InstanceCell<L>>>,
+    checker: Box<dyn ComponentLifetimeChecker<L>>,
+}
+
+trait CreateOrCloneLifetime<L : Lock> {
+    fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
+        self.create_or_clone_any(injector)
+            .get()
+            .expect("Invalid T given cannot create.")
+    }
+
+    fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L>;
+}
+
 impl<L : Lock> CreateOrClone<L> {
     pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
         match self {
             CreateOrClone::Singleton(item) =>
                 item.create_or_clone(injector),
             CreateOrClone::Transient(item) =>
+                item.create_or_clone(injector),
+            CreateOrClone::Custom(item) =>
                 item.create_or_clone(injector),
             CreateOrClone::Empty => unreachable!("Empty create or clone type should never be used"),
         }
@@ -363,6 +384,8 @@ impl<L : Lock> CreateOrClone<L> {
                 item.create_or_clone_any(injector),
             CreateOrClone::Transient(item) =>
                 item.create_or_clone_any(injector),
+            CreateOrClone::Custom(item) =>
+                item.create_or_clone_any(injector),
             CreateOrClone::Empty => unreachable!("Empty create or clone type should never be used"),
         }
     }
@@ -372,14 +395,10 @@ impl<L : Lock> CreateOrCloneSingleton<L> {
     pub fn new(func: ComponentCreateFunction<L>) -> Self {
         Self { func, value: RwLock::new(None) }
     }
+}
 
-    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
-        let value = self.create_or_clone_any(&injector);
-        value.get()
-            .expect("Invalid T given cannot create singleton.")
-    }
-
-    pub fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
+impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneSingleton<L> {
+    fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
         {
             let lock = self.value.read()
                 .unwrap(); // lock should never be poisoned
@@ -404,16 +423,55 @@ impl<L : Lock> CreateOrCloneTransient<L> {
     pub fn new(func: ComponentCreateFunction<L>) -> Self {
         Self { func }
     }
+}
 
-    pub fn create_or_clone<T : ?Sized + 'static>(&self, injector: &Injector<L>) -> L::Lock<T> {
-        let value = self.create_or_clone_any(&injector);
-        value.get()
-            .expect("Invalid T given cannot create transient.")
-    }
-
-    pub fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
+impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneTransient<L> {
+    fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
         let func_value = self.func.call(&injector);
         func_value
+    }
+}
+
+impl<L : Lock> CreateOrCloneCustom<L> {
+    pub fn new<C : ComponentLifetimeChecker<L> + 'static>(func: ComponentCreateFunction<L>, checker: C) -> Self {
+        Self {
+            func,
+            checker: Box::new(checker),
+            value: Mutex::new(None)
+        }
+    }
+    
+    fn create_new(&self, injector: &Injector<L>, mut value_guard: MutexGuard<Option<InstanceCell<L>>>) -> InstanceCell<L> {
+        let func_value = self.func.call(&injector);
+        
+        value_guard
+            .replace(func_value.clone());
+
+        func_value
+    }
+}
+
+impl<L : Lock> CreateOrCloneLifetime<L> for CreateOrCloneCustom<L> {
+    fn create_or_clone_any(&self, injector: &Injector<L>) -> InstanceCell<L> {
+        let needs_new_instance = self.checker.needs_new_instance(injector);
+
+        if needs_new_instance {
+            // Lock should never be poisoned
+            let value = self.value.lock()
+                .unwrap();
+
+            self.create_new(injector, value)
+        } else {
+            // Lock should never be poisoned
+            let value = self.value.lock()
+                .unwrap();
+            match value.as_ref() {
+                Some(value) =>
+                    value.clone(),
+                None =>
+                    self.create_new(injector, value)
+            }
+        }
     }
 }
 

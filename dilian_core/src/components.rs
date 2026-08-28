@@ -3,8 +3,9 @@ use crate::Injector;
 #[cfg(debug_assertions)]
 use std::any::type_name;
 use std::any::TypeId;
+use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
-use crate::container::DynInstanceCellFn;
+use crate::container::{DynInstanceCellFn};
 use crate::sync::{Lock, LockBound};
 
 /// A marker trait indicating that a type can be injected.
@@ -24,13 +25,58 @@ pub trait DynamicInjectable<T : Injectable + ?Sized, L : Lock> : FromInjector<L>
 }
 
 /// The lifetime of a component: either singleton or transient.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub enum ComponentLifetime {
+#[derive(Default)]
+pub enum ComponentLifetime<C> {
     /// Creates one instance of the type and reuses it for subsequent requests.
     #[default]
     Singleton,
     /// Creates a new instance of the type for each request.
-    Transient
+    Transient,
+    /// A custom component lifetime.
+    Custom(C),
+}
+
+impl<C : Clone> Clone for ComponentLifetime<C> {
+    fn clone(&self) -> Self {
+        match self {
+            ComponentLifetime::Singleton => ComponentLifetime::Singleton,
+            ComponentLifetime::Transient => ComponentLifetime::Transient,
+            ComponentLifetime::Custom(checker) => ComponentLifetime::Custom(checker.clone()),
+        }
+    }
+}
+
+impl<L> PartialEq for ComponentLifetime<L> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ComponentLifetime::Singleton, ComponentLifetime::Singleton) => true,
+            (ComponentLifetime::Transient, ComponentLifetime::Transient) => true,
+            (ComponentLifetime::Custom(_), ComponentLifetime::Custom(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl<L> Debug for ComponentLifetime<L> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ComponentLifetime::Singleton => write!(f, "Singleton"),
+            ComponentLifetime::Transient => write!(f, "Transient"),
+            ComponentLifetime::Custom(_) => write!(f, "Custom"),
+        }
+    }
+}
+
+/// Used for custom lifetimes on components. See [`Component::custom`].
+/// 
+/// A new checker is created for each service added to the injector using [`Component::custom`].
+/// This includes every [`ComponentBuilder::with_dynamic`] added.
+pub trait ComponentLifetimeChecker<L : Lock> : Send + Sync {
+    /// Checks if a component needs a new instance. 
+    ///
+    /// If true a new component will be created and the old one will be destroyed.
+    /// If false the old component will be passed to the caller of the function.
+    fn needs_new_instance(&self, injector: &Injector<L>) -> bool;
 }
 
 pub(crate) struct DynamicComponent<L : Lock> {
@@ -56,8 +102,8 @@ impl<L : Lock> ComponentCreateFunction<L> {
 }
 
 /// A component that can be added to an [`Injector`].
-pub struct Component<L : Lock> {
-    pub(crate) lifetime: ComponentLifetime,
+pub struct Component<L : Lock, C> {
+    pub(crate) lifetime: ComponentLifetime<C>,
     pub(crate) create_func: ComponentCreateFunction<L>,
     pub(crate) unique_id: TypeId,
 
@@ -67,10 +113,10 @@ pub struct Component<L : Lock> {
     pub(crate) type_name: &'static str,
 }
 
-impl<L : Lock> Component<L> {
+impl<L : Lock, C> Component<L, C> {
     /// Returns the lifetime of the component.
-    pub fn lifetime(&self) -> ComponentLifetime {
-        self.lifetime
+    pub fn lifetime(&self) -> &ComponentLifetime<C> {
+        &self.lifetime
     }
     
     /// Returns the unique [`TypeId`] of the component's type.
@@ -88,17 +134,17 @@ struct ComponentBuilderDynItem<L : Lock> {
 }
 
 /// A builder for creating the component for the type `T`. Can be initialized via the `Component`'s methods.
-pub struct ComponentBuilder<T, L : Lock> {
-    lifetime: ComponentLifetime,
+pub struct ComponentBuilder<T, L : Lock, C> {
+    lifetime: ComponentLifetime<C>,
     factory_func: Option<Box<DynInstanceCellFn<L>>>,
     
     dynamics: Vec<ComponentBuilderDynItem<L>>,
     phantom: PhantomData<T>,
 }
 
-impl<L : Lock> Component<L> {
+impl<L : Lock> Component<L, ()> {
     /// Creates a singleton component builder.
-    pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L>
+    pub fn singleton<T : FromInjector<L> + 'static>() -> ComponentBuilder<T, L, ()>
         where L : LockBound<T>
     {
         ComponentBuilder {
@@ -110,7 +156,7 @@ impl<L : Lock> Component<L> {
     }
 
     /// Creates a transient component builder.
-    pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L>
+    pub fn transient<T : FromInjector<L>  + 'static>() -> ComponentBuilder<T, L, ()>
         where L : LockBound<T>
     {
         ComponentBuilder {
@@ -120,9 +166,21 @@ impl<L : Lock> Component<L> {
             phantom: PhantomData,
         }
     }
+    
+    /// Creates a component builder containing a custom lifetime.
+    pub fn custom<T : FromInjector<L> + 'static, C : ComponentLifetimeChecker<L> + Clone>(checker: C) -> ComponentBuilder<T, L, C> 
+        where L : LockBound<T>
+    {
+        ComponentBuilder {
+            lifetime: ComponentLifetime::Custom(checker),
+            factory_func: None,
+            dynamics: Vec::new(),
+            phantom: PhantomData,
+        }
+    }
 }
 
-impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
+impl<T : FromInjector<L> + 'static, L : Lock, C> ComponentBuilder<T, L, C> {
     /// Configures a custom factory function for creating the type.
     pub fn with_factory(self, factory: impl Fn(&Injector<L>) -> T + Send + Sync + 'static) -> Self {
         Self {
@@ -167,7 +225,7 @@ impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
     }
 
     /// Builds the component.
-    pub fn build(self) -> Component<L> {
+    pub fn build(self) -> Component<L, C> {
         Component {
             lifetime: self.lifetime,
             create_func: match self.factory_func {
@@ -192,5 +250,11 @@ impl<T : FromInjector<L> + 'static, L : Lock> ComponentBuilder<T, L> {
             #[cfg(debug_assertions)]
             type_name: type_name::<T>(),
         }
+    }
+}
+
+impl<L : Lock> ComponentLifetimeChecker<L> for () {
+    fn needs_new_instance(&self, _: &Injector<L>) -> bool {
+        false
     }
 }
