@@ -228,6 +228,15 @@ struct SingleOrListIterator<'a, T> {
     position: usize,
 }
 
+impl<'a, T> Clone for SingleOrListIterator<'a, T> {
+    fn clone(&self) -> Self {
+        Self {
+            items: self.items,
+            position: self.position,
+        }
+    }
+}
+
 impl<'a, T> Iterator for SingleOrListIterator<'a, T> {
     type Item = &'a T;
 
@@ -266,6 +275,17 @@ pub struct DependencyIter<'a, T : ?Sized, L : Lock> {
     iterator: SingleOrListIterator<'a, ContainerComponent<L>>,
     injector: &'a Injector<L>,
     phantom: PhantomData<T>
+}
+
+/// A zero cost clone for the dependency iterator.
+impl<'a, T : ?Sized, L : Lock> Clone for DependencyIter<'a, T, L> {
+    fn clone(&self) -> Self {
+        Self {
+            phantom: PhantomData,
+            injector: self.injector,
+            iterator: self.iterator.clone()
+        }
+    }
 }
 
 impl<'a, T : 'static + ?Sized, L : Lock> Iterator for DependencyIter<'a, T, L> {
