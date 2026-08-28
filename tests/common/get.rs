@@ -4,11 +4,12 @@ use generic_tests::define;
 mod tests {
     use std::any::TypeId;
     use dilian::sync::{LockBound, Lockable};
-    use dilian::Injector;
+    use dilian::{Component, Injector};
     use dilian::sync::{MutexMarker, RwLockMarker, RefCellMarker};
     use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService};
     use dilian::sync::Lock;
     use std::ops::Deref;
+    use crate::custom_lifetime::CustomLifetime;
 
     #[test]
     pub fn get_empty<L : Lock  + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
@@ -97,6 +98,79 @@ mod tests {
             assert_eq!(INITIALIZE_COUNT.get(), 2, "Transient should always be reinitialized for every get.");
             assert_eq!(DROP_COUNT.get(), 2, "Should have been dropped twice as it was created twice.");
         }
+    }
+
+    #[test]
+    pub fn get_custom_multiple_times<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        {
+            // Arrange
+            let mut injector = Injector::<L>::new();
+
+            CustomLifetime::reset_scope();
+            injector.component(
+                Component::custom::<TestLogger, _>(CustomLifetime::new())
+                    .build()
+            );
+
+            reset();
+
+            {
+                // Act
+                let get = injector.get::<TestLogger>();
+                let get2 = injector.get::<TestLogger>();
+
+                // Assert
+                assert!(get.is_some());
+                assert!(get2.is_some());
+            }
+
+            assert_eq!(INITIALIZE_COUNT.get(), 1, "Custom should only be initialized once per scope.");
+            assert_eq!(DROP_COUNT.get(), 0, "Instance should only be dropped after the Injector is dropped.");
+
+            CustomLifetime::update_scope();
+            injector.get::<TestLogger>();
+
+            assert_eq!(INITIALIZE_COUNT.get(), 2, "Custom should be initialized again after the scope changes.");
+            assert_eq!(DROP_COUNT.get(), 1, "The previous instance should be dropped after the scope changes.");
+        }
+        assert_eq!(DROP_COUNT.get(), 2, "Both custom instances should be dropped after the Injector is dropped.");
+    }
+
+    #[test]
+    pub fn get_custom_multiple_times_dynamic<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        {
+            // Arrange
+            let mut injector = Injector::<L>::new();
+
+            CustomLifetime::reset_scope();
+            injector.component(
+                Component::custom::<TestLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+
+            reset();
+
+            {
+                // Act
+                let get = injector.get::<dyn Logger>();
+                let get2 = injector.get::<dyn Logger>();
+
+                // Assert
+                assert!(get.is_some());
+                assert!(get2.is_some());
+            }
+
+            assert_eq!(INITIALIZE_COUNT.get(), 1, "Custom should only be initialized once per scope.");
+            assert_eq!(DROP_COUNT.get(), 0, "Instance should only be dropped after the Injector is dropped.");
+
+            CustomLifetime::update_scope();
+            injector.get::<dyn Logger>();
+
+            assert_eq!(INITIALIZE_COUNT.get(), 2, "Custom should be initialized again after the scope changes.");
+            assert_eq!(DROP_COUNT.get(), 1, "The previous instance should be dropped after the scope changes.");
+        }
+        assert_eq!(DROP_COUNT.get(), 2, "Both custom instances should be dropped after the Injector is dropped.");
     }
 
     #[test]
@@ -383,6 +457,222 @@ mod tests {
 
         assert_eq!(DROP_COUNT.get(), 1, "Singleton should only be dropped after the Injector is dropped.");
         assert_eq!(OTHER_DROP_COUNT.get(), 2, "Instance should be dropped after the list is dropped.");
+    }
+
+    #[test]
+    pub fn get_custom_single_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        {
+            CustomLifetime::reset_scope();
+            let mut injector = Injector::<L>::new();
+            injector.component(
+                Component::custom::<TestLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            reset();
+
+            let list = injector.get_list::<dyn Logger>();
+            assert_eq!(INITIALIZE_COUNT.get(), 0);
+            assert_eq!(list.count(), 1);
+            assert_eq!(INITIALIZE_COUNT.get(), 1);
+
+            CustomLifetime::update_scope();
+            let list = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 1);
+            assert_eq!(INITIALIZE_COUNT.get(), 2);
+            assert_eq!(DROP_COUNT.get(), 1);
+        }
+        assert_eq!(DROP_COUNT.get(), 2);
+    }
+
+    #[test]
+    pub fn get_custom_transient_single_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        CustomLifetime::reset_scope();
+        let mut injector = Injector::<L>::new();
+        injector.component(
+            Component::custom::<TestLogger, _>(CustomLifetime::new())
+                .with_dynamic::<dyn Logger>()
+                .build()
+        );
+        reset();
+
+        let list = injector.get_list::<dyn Logger>();
+        assert_eq!(list.count(), 1);
+        assert_eq!(INITIALIZE_COUNT.get(), 1);
+
+        CustomLifetime::update_scope();
+        let list = injector.get_list::<dyn Logger>();
+        assert_eq!(list.count(), 1);
+        assert_eq!(INITIALIZE_COUNT.get(), 2);
+        assert_eq!(DROP_COUNT.get(), 1);
+    }
+
+    #[test]
+    pub fn get_custom_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        {
+            CustomLifetime::reset_scope();
+            let mut injector = Injector::<L>::new();
+            injector.component(
+                Component::custom::<TestLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            injector.component(
+                Component::custom::<AnotherLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            reset();
+
+            let list = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 2);
+            assert_eq!(INITIALIZE_COUNT.get(), 1);
+            assert_eq!(OTHER_INITIALIZE_COUNT.get(), 1);
+
+            CustomLifetime::update_scope();
+            let list = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 2);
+            assert_eq!(INITIALIZE_COUNT.get(), 2);
+            assert_eq!(OTHER_INITIALIZE_COUNT.get(), 2);
+            assert_eq!(DROP_COUNT.get(), 1);
+            assert_eq!(OTHER_DROP_COUNT.get(), 1);
+        }
+        assert_eq!(DROP_COUNT.get(), 2);
+        assert_eq!(OTHER_DROP_COUNT.get(), 2);
+    }
+
+    #[test]
+    pub fn get_custom_transient_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        CustomLifetime::reset_scope();
+        let mut injector = Injector::<L>::new();
+        injector.component(
+            Component::custom::<TestLogger, _>(CustomLifetime::new())
+                .with_dynamic::<dyn Logger>()
+                .build()
+        );
+        injector.component(
+            Component::custom::<AnotherLogger, _>(CustomLifetime::new())
+                .with_dynamic::<dyn Logger>()
+                .build()
+        );
+        reset();
+
+        let list = injector.get_list::<dyn Logger>();
+        assert_eq!(list.count(), 2);
+        assert_eq!(INITIALIZE_COUNT.get(), 1);
+        assert_eq!(OTHER_INITIALIZE_COUNT.get(), 1);
+
+        CustomLifetime::update_scope();
+        let list = injector.get_list::<dyn Logger>();
+        assert_eq!(list.count(), 2);
+        assert_eq!(INITIALIZE_COUNT.get(), 2);
+        assert_eq!(OTHER_INITIALIZE_COUNT.get(), 2);
+        assert_eq!(DROP_COUNT.get(), 1);
+        assert_eq!(OTHER_DROP_COUNT.get(), 1);
+    }
+
+    #[test]
+    pub fn get_custom_multiple_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        {
+            CustomLifetime::reset_scope();
+            let mut injector = Injector::<L>::new();
+            injector.component(
+                Component::custom::<TestLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            injector.component(
+                Component::custom::<AnotherLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            reset();
+
+            let list = injector.get_list::<dyn Logger>();
+            let list2 = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 2);
+            assert_eq!(list2.count(), 2);
+            assert_eq!(INITIALIZE_COUNT.get(), 1);
+            assert_eq!(OTHER_INITIALIZE_COUNT.get(), 1);
+
+            CustomLifetime::update_scope();
+            let list = injector.get_list::<dyn Logger>();
+            let list2 = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 2);
+            assert_eq!(list2.count(), 2);
+            assert_eq!(INITIALIZE_COUNT.get(), 2);
+            assert_eq!(OTHER_INITIALIZE_COUNT.get(), 2);
+            assert_eq!(DROP_COUNT.get(), 1);
+            assert_eq!(OTHER_DROP_COUNT.get(), 1);
+        }
+        assert_eq!(DROP_COUNT.get(), 2);
+        assert_eq!(OTHER_DROP_COUNT.get(), 2);
+    }
+
+    #[test]
+    pub fn get_custom_transient_multiple_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        CustomLifetime::reset_scope();
+        let mut injector = Injector::<L>::new();
+        injector.component(
+            Component::custom::<TestLogger, _>(CustomLifetime::new())
+                .with_dynamic::<dyn Logger>()
+                .build()
+        );
+        injector.component(
+            Component::custom::<AnotherLogger, _>(CustomLifetime::new())
+                .with_dynamic::<dyn Logger>()
+                .build()
+        );
+        reset();
+
+        let list = injector.get_list::<dyn Logger>();
+        let list2 = injector.get_list::<dyn Logger>();
+        assert_eq!(list.count(), 2);
+        assert_eq!(list2.count(), 2);
+        assert_eq!(INITIALIZE_COUNT.get(), 1);
+        assert_eq!(OTHER_INITIALIZE_COUNT.get(), 1);
+
+        CustomLifetime::update_scope();
+        let list = injector.get_list::<dyn Logger>();
+        let list2 = injector.get_list::<dyn Logger>();
+        assert_eq!(list.count(), 2);
+        assert_eq!(list2.count(), 2);
+        assert_eq!(INITIALIZE_COUNT.get(), 2);
+        assert_eq!(OTHER_INITIALIZE_COUNT.get(), 2);
+        assert_eq!(DROP_COUNT.get(), 1);
+        assert_eq!(OTHER_DROP_COUNT.get(), 1);
+    }
+
+    #[test]
+    pub fn get_custom_mixed_multiple_list<L : Lock + LockBound<TestLogger> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() {
+        {
+            CustomLifetime::reset_scope();
+            let mut injector = Injector::<L>::new();
+            injector.component(
+                Component::custom::<TestLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            injector.component(
+                Component::custom::<AnotherLogger, _>(CustomLifetime::new())
+                    .with_dynamic::<dyn Logger>()
+                    .build()
+            );
+            reset();
+
+            let list = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 2);
+            CustomLifetime::update_scope();
+            let list = injector.get_list::<dyn Logger>();
+            assert_eq!(list.count(), 2);
+
+            assert_eq!(INITIALIZE_COUNT.get(), 2);
+            assert_eq!(OTHER_INITIALIZE_COUNT.get(), 2);
+            assert_eq!(DROP_COUNT.get(), 1);
+            assert_eq!(OTHER_DROP_COUNT.get(), 1);
+        }
+        assert_eq!(DROP_COUNT.get(), 2);
+        assert_eq!(OTHER_DROP_COUNT.get(), 2);
     }
 
     #[test]
