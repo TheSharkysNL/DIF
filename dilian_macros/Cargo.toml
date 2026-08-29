@@ -1,6 +1,6 @@
 [package]
 name = "dilian_macros"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2024"
 description = "Macros used for simplifying the creation of services used for dependency injection"
 license = "MIT"

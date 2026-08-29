@@ -112,7 +112,10 @@ impl ToTokens for FromInjectorImpl<'_> {
                             if (lock_type.is_some() && parameter.lock_name.is_some()) && lock_type.to_token_stream().to_string() != parameter.lock_name.to_token_stream().to_string() {
                                 return Err(Error::new(parameter.lock_name.span(), "Parameter does not use the same lock as the other parameters. All lock types must be the same."))
                             }
-                            lock_type = parameter.lock_name.clone();
+                            
+                            if parameter.lock_name.is_some() {
+                                lock_type = parameter.lock_name.clone();
+                            }
                             
                             let ty = parameter.ty;
                             match (parameter.lock_name, parameter.is_iterator) {
