@@ -395,11 +395,13 @@ trait CreateOrCloneLifetime<L : Lock> {
     fn create_new_any(&self, injector: &Injector<L>) -> InstanceCell<L>;
     
     fn create_new<T : 'static>(&self, injector: &Injector<L>) -> T {
-        match L::try_into_inner(
+        let new = { // drop the instance cell as it can still have a reference to the lock
             self.create_new_any(injector)
                 .get::<T>()
                 .expect("The type T given was invalid for this operation.")
-        ) {
+        };
+        
+        match L::try_into_inner(new) {
             Ok(value) => value,
             Err(_) => unreachable!("There should be no other references to the Lock as it was just created.")
         }
