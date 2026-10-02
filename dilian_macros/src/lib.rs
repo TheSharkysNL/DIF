@@ -58,7 +58,6 @@ use syn::parse::{Parse, Parser};
 ///         println!("UserService initialized"); // print out when the service is initialized
 ///         Self {
 ///             dependency,
-///             dependency2
 ///         }
 ///     }
 ///     
@@ -83,7 +82,6 @@ use syn::parse::{Parse, Parser};
 ///         println!("UserService initialized"); // print out when the service is initialized
 ///         Self {
 ///             dependency,
-///             dependency2
 ///         }
 ///     }
 ///     
@@ -117,6 +115,69 @@ use syn::parse::{Parse, Parser};
 ///             .unwrap();
 ///
 ///         // use dependency here...
+///     }
+/// }
+/// ```
+///
+/// Injecting multiple dynamic dependencies at the same time can be done using iterators or vecs.
+/// ```rust
+/// use dilian::sync::MutexLock;
+///
+/// impl UserService {
+///     pub fn new(dependencies: impl Iterator<Item = MutexLock<Dependency>>, dependencies2: Vec<MutexLock<Dependency>>) -> Self {
+///         println!("UserService initialized"); // print out when the service is initialized
+///         Self {
+///             dependencies: dependencies.collect::<Vec<_>>(),
+///             dependencies2
+///         }
+///     }
+///     
+///     pub fn get_user(&mut self, user_id: u32) -> Option<User> {
+///         for dependency in self.dependencies {
+///             let dependency_guard = dependency.lock();
+///             
+///             // use dependency here
+///         }       
+///     }
+/// }
+/// ```
+///
+/// Optional dependencies are also possible. 
+/// For if you are not sure that the dependency has been added to the `Injector`.
+/// ```rust
+/// use dilian::sync::MutexLock;
+///
+/// impl UserService {
+///     pub fn new(dependency: Option<MutexLock<Dependency>>) -> Self {
+///         println!("UserService initialized"); // print out when the service is initialized
+///         Self {
+///             dependency,
+///         }
+///     }
+///     
+///     pub fn get_user(&mut self, user_id: u32) -> Option<User> {
+///         if let Some(dependency) = dependency {
+///             let dependency_guard = dependency.lock();
+/// 
+///             // use dependency here
+///         }         
+///     }
+/// }
+/// ```
+///
+/// If you don't want to have a shared lock then you can remove the lock and just retrieve the dependency.
+/// This has some caveats as this uses the `Injector::produce` function. Read the documentation on that for more details.
+/// ```rust
+/// impl UserService {
+///     pub fn new(dependency: Dependency) -> Self {
+///         println!("UserService initialized"); // print out when the service is initialized
+///         Self {
+///             dependency,
+///         }
+///     }
+///     
+///     pub fn get_user(&mut self, user_id: u32) -> Option<User> {
+///         // you can just use the dependency here without needing to lock it.       
 ///     }
 /// }
 /// ```

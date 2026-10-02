@@ -1,4 +1,4 @@
-use crate::helpers::{get_associated_generic_type, get_generic_path, get_iterator_impl, get_method, match_path, returns_self};
+use crate::helpers::{get_associated_generic_type, get_generic_path, get_generic_type, get_iterator_impl, get_method, match_path, match_path_type, returns_self};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
 use syn::{parse_quote, Error, FnArg, GenericArgument, GenericParam, Generics, Ident, ImplItem, Pat, PatType, Type, TypeParamBound};
@@ -22,10 +22,18 @@ pub struct DynamicInjectableImpl<'a> {
     generics: &'a syn::Generics,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub enum IteratorType {
+    None, 
+    ImplIterator,
+    Vec,
+}
+
 pub struct ParameterType<'a> {
     lock_name: Option<Type>,
     ty: &'a Type,
-    is_iterator: bool,
+    iterator_type: IteratorType,
+    is_optional: bool,
 }
 
 impl From<(syn::ItemImpl, Option<Type>)> for Service {
@@ -118,23 +126,60 @@ impl ToTokens for FromInjectorImpl<'_> {
                             }
                             
                             let ty = parameter.ty;
-                            match (parameter.lock_name, parameter.is_iterator) {
-                                (Some(_), false) => {
+                            let mut generic_ty = None;
+                            for generic in generics.params.iter_mut() {
+                                if let GenericParam::Type(ref mut type_param) = *generic {
+                                    if matches!(ty, Type::Path(path) if path.path.is_ident(&type_param.ident)) {
+                                        generic_ty = Some(type_param);
+                                    }
+                                }
+                            }
+                            
+                            let expect = if parameter.is_optional {
+                                quote! {}
+                            } else {
+                                quote! { .expect(concat!("The type '", stringify!(#ty), "' has not been added as a service.")) }
+                            };
+                            
+                            let collect = if parameter.iterator_type == IteratorType::Vec {
+                                quote! { .collect::<std::vec::Vec<_>>() }
+                            } else {
+                                quote! {}
+                            };
+                            
+                            match (parameter.lock_name, parameter.iterator_type) {
+                                (Some(_), IteratorType::None) => {
+                                    if let Some(generic) = generic_ty {
+                                        generic.bounds.push(parse_quote!(?Sized));
+                                        generic.bounds.push(parse_quote!('static));
+                                    }
                                     Ok(quote! {
-                                        let #name = injector.get::<#ty>().expect(concat!("The type '", stringify!(#ty), "' has not been added as a service."));
+                                        let #name = injector.get::<#ty>() #expect;
                                     })
                                 },
-                                (None, false) => {
+                                (None, IteratorType::None) => {
+                                    if let Some(generic) = generic_ty {
+                                        generic.bounds.push(parse_quote!('static));
+                                    }
                                     Ok(quote! {
-                                        let #name = injector.produce::<#ty>().expect(concat!("The type '", stringify!(#ty), "' has not been added as a service."));
+                                        let #name = injector.produce::<#ty>() #expect;
                                     })
                                 },
-                                (Some(_), true) => {
+                                (Some(_), _) => {
+                                    if let Some(generic) = generic_ty {
+                                        generic.bounds.push(parse_quote!(?Sized));
+                                        generic.bounds.push(parse_quote!('static));
+                                    }
+                                    
+                                    if parameter.is_optional {
+                                        return Err(Error::new(arg.ty.span(), "Iterator cannot be optional. If the service was not found the iterator will be empty."))
+                                    }
+                                    
                                     Ok(quote! {
-                                        let #name = injector.get_list::<#ty>();
+                                        let #name = injector.get_list::<#ty>() #collect;
                                     })
                                 },
-                                (None, true) => {
+                                (None, _) => {
                                     Err(Error::new(arg.ty.span(), "Iterator must contain a lockable type."))
                                 }
                             }
@@ -229,108 +274,128 @@ impl ToTokens for DynamicInjectableImpl<'_> {
     }
 }
 
+fn get_parameter_type_inner<'a>(ty: &'a Type, generics: &'a Generics) -> syn::Result<(Option<Type>, &'a Type, IteratorType)> {
+    if let Type::Path(path) = ty {
+        if match_path_type("std::vec::Vec", ty) {
+            let (lock_name, ty, _) = get_generic_type(ty, "std::vec::Vec<T>")
+                .and_then(|x| get_parameter_type_inner(x, generics))?;
+
+            return Ok((
+                lock_name,
+                ty,
+                IteratorType::Vec,
+            ))
+        }
+
+        let (lock_type, is_valid) = match path.qself.as_ref() {
+            Some(s) => {
+                let range = path.path.segments
+                    .iter()
+                    .take(s.position);
+
+
+                (s.ty.as_ref().clone(), match_path("dilian::sync::Lock", range))
+            },
+            None => {
+                let first_segment = path.path.segments.first();
+                if let Some(segment) = first_segment {
+                    let lock_generic = generics
+                        .params
+                        .iter()
+                        .find(|generic| match generic {
+                            GenericParam::Type(ty) => {
+                                if ty.ident == segment.ident {
+                                    let lock_bounds = ty.bounds
+                                        .iter()
+                                        .find(|bound| match bound {
+                                            TypeParamBound::Trait(_trait) => {
+                                                match_path("dilian::sync::Lock", _trait.path.segments.iter())
+                                            },
+                                            _ => false,
+                                        });
+
+                                    lock_bounds.is_some()
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => false,
+                        });
+
+                    // if there is a first there must always be a last
+                    let last_segment = path.path.segments.last().unwrap();
+                    let last_segment_string = last_segment.ident.to_string();
+                    if last_segment_string.ends_with("Lock") && lock_generic.is_none() {
+                        let marker_type = get_marker_type(last_segment_string.as_str(), ty.span());
+
+                        (marker_type, true)
+                    } else {
+                        (parse_quote!(#segment), lock_generic.is_some())
+                    }
+                } else {
+                    (Type::Verbatim(TokenStream2::new()), false)
+                }
+            },
+        };
+
+
+
+        if !is_valid {
+            return Ok((None, ty, crate::service::IteratorType::None));
+        }
+
+        let ty = get_generic_path(&path.path, "Lock<T>")?;
+        Ok((
+            Some(lock_type),
+            match ty {
+                GenericArgument::Type(ty) => ty,
+                generic => return Err(Error::new(generic.span(), "Expected generic type."))
+            },
+            IteratorType::None,
+        ))
+    } else if let Some(result) = get_iterator_impl(ty) {
+        match result {
+            Ok(iterator) => {
+                let inner_argument = get_associated_generic_type(&iterator.path, "std::iter::Iterator<Item = T>")
+                    .and_then(|x| get_parameter_type_inner(x, generics))?;
+                
+                Ok((
+                    inner_argument.0,
+                    inner_argument.1,
+                    IteratorType::ImplIterator,
+                ))
+            },
+            Err(error) => Err(error),
+        }
+    } else {
+        Ok((None,
+            ty,
+            IteratorType::None,
+        ))
+    }
+}
+
 impl<'a> TryFrom<(&'a Type, &'a Generics)> for ParameterType<'a> {
 
     type Error = syn::Error;
 
     fn try_from((ty, generics): (&'a Type, &'a Generics)) -> Result<Self, Self::Error> {
-        if let Type::Path(path) = ty {
-            let (lock_type, is_valid) = match path.qself.as_ref() {
-                Some(s) => {
-                    let range = path.path.segments
-                        .iter()
-                        .take(s.position);
-                    
-                    
-                    (s.ty.as_ref().clone(), match_path("dilian::sync::Lock", range))
-                },
-                None => {
-                    let first_segment = path.path.segments.first();
-                    if let Some(segment) = first_segment {
-                        let lock_generic = generics
-                            .params
-                            .iter()
-                            .find(|generic| match generic {
-                                GenericParam::Type(ty) => {
-                                    if ty.ident == segment.ident {
-                                        let lock_bounds = ty.bounds
-                                            .iter()
-                                            .find(|bound| match bound {
-                                                TypeParamBound::Trait(_trait) => {
-                                                    match_path("dilian::sync::Lock", _trait.path.segments.iter())
-                                                },
-                                                _ => false,
-                                            });
-                                        
-                                        lock_bounds.is_some()
-                                    } else {
-                                        false
-                                    }
-                                }
-                                _ => false,
-                            });
-
-                        // if there is a first there must always be a last
-                        let last_segment = path.path.segments.last().unwrap();
-                        let last_segment_string = last_segment.ident.to_string();
-                        if last_segment_string.ends_with("Lock") && lock_generic.is_none() {
-                            let marker_type = get_marker_type(last_segment_string.as_str(), ty.span());
-                            
-                            (marker_type, true)
-                        } else {
-                            (parse_quote!(#segment), lock_generic.is_some())
-                        }
-                    } else {
-                        (Type::Verbatim(TokenStream2::new()), false)
-                    }
-                },
-            };
-            
-            
-            
-            if !is_valid {
-                return Ok(Self {
-                    lock_name: None,
-                    ty,
-                    is_iterator: false,
-                });
-            }
-            
-            let ty = get_generic_path(&path.path, "Lock<T>")?;
+        if match_path_type("std::option::Option", ty) {
+            let inner = get_generic_type(ty, "std::option::Option")?;
+            let (lock_name, ty, is_iterator) = get_parameter_type_inner(inner, generics)?;
             Ok(Self {
-                lock_name: Some(lock_type),
-                ty: match ty {
-                    GenericArgument::Type(ty) => ty,
-                    generic => return Err(Error::new(generic.span(), "Expected generic type."))
-                },
-                is_iterator: false,
-            })
-        } else if let Some(result) = get_iterator_impl(ty) {
-            match result {
-                Ok(iterator) => {
-                    let inner_argument: Result<ParameterType<'a>, _> = get_associated_generic_type(&iterator.path, "std::iter::Iterator<Item = T>")
-                        .and_then(|x| (x, generics).try_into());
-
-                    let inner_argument = match inner_argument {
-                        Ok(x) => x,
-                        Err(e) => {
-                            return Err(e);
-                        }
-                    };
-
-                    Ok(Self {
-                        lock_name: inner_argument.lock_name,
-                        ty: inner_argument.ty,
-                        is_iterator: true,
-                    })
-                },
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Self {
-                lock_name: None,
+                lock_name,
                 ty,
-                is_iterator: false,
+                iterator_type: is_iterator,
+                is_optional: true
+            })
+        } else {
+            let (lock_name, ty, is_iterator) = get_parameter_type_inner(ty, generics)?;
+            Ok(Self {
+                lock_name,
+                ty,
+                iterator_type: is_iterator,
+                is_optional: false
             })
         }
     }

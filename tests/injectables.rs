@@ -125,3 +125,20 @@ impl<L : Lock + 'static> LoggerUser<L> {
         logger.write("my message");
     }
 }
+
+pub struct DependencyOptional<L : Lock> {
+    logger: Option<L::Lock<TestLogger>>,
+}
+
+#[service]
+impl<L : Lock + 'static> DependencyOptional<L> {
+    pub fn new(logger: Option<L::Lock<TestLogger>>) -> Self {
+        Self {
+            logger,
+        }
+    }
+    
+    pub fn has_logger(&self) -> bool {
+        self.logger.is_some()
+    }
+}

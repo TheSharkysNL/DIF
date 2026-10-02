@@ -6,7 +6,7 @@ mod tests {
     use dilian::sync::{LockBound, Lockable};
     use dilian::{Component, Injector};
     use dilian::sync::{MutexMarker, RwLockMarker, RefCellMarker};
-    use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService};
+    use crate::injectables::{reset, INITIALIZE_COUNT, DROP_COUNT, TestLogger, Logger, AnotherLogger, OTHER_INITIALIZE_COUNT, OTHER_DROP_COUNT, WRITTEN_STRING, AnotherService, DependencyOptional};
     use dilian::sync::Lock;
     use std::ops::Deref;
     use crate::custom_lifetime::CustomLifetime;
@@ -956,6 +956,53 @@ mod tests {
         let logger = logger.read();
 
         assert_eq!(Logger::type_id(logger.deref()), TypeId::of::<TestLogger>());
+    }
+
+    #[test]
+    pub fn get_optional_not_added<L : Lock + 'static + LockBound<TestLogger> + LockBound<DependencyOptional<L>> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>() 
+        where <L as Lock>::Lock<DependencyOptional<L>> : Lockable<DependencyOptional<L>>,
+    {
+        // Arrange
+        let mut injector = Injector::<L>::new();
+
+        injector.singleton::<DependencyOptional<L>>();
+
+        reset();
+
+        // Act
+        let logger = injector.get::<DependencyOptional<L>>();
+
+        // Assert
+        assert!(logger.is_some());
+        
+        let logger = logger.unwrap();
+        let logger = logger.read();
+        
+        assert!(!logger.has_logger())
+    }
+
+    #[test]
+    pub fn get_optional_added<L : Lock + 'static + LockBound<TestLogger> + LockBound<DependencyOptional<L>> + LockBound<dyn Logger> + LockBound<AnotherLogger> + LockBound<AnotherService>>()
+    where <L as Lock>::Lock<DependencyOptional<L>> : Lockable<DependencyOptional<L>>,
+    {
+        // Arrange
+        let mut injector = Injector::<L>::new();
+
+        injector.singleton::<TestLogger>();
+        injector.singleton::<DependencyOptional<L>>();
+
+        reset();
+
+        // Act
+        let logger = injector.get::<DependencyOptional<L>>();
+
+        // Assert
+        assert!(logger.is_some());
+
+        let logger = logger.unwrap();
+        let logger = logger.read();
+
+        assert!(logger.has_logger())
     }
 
     #[instantiate_tests(<MutexMarker>)]
