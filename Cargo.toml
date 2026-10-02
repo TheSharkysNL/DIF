@@ -1,6 +1,6 @@
 [package]
 name = "dilian"
-version = "1.1.11"
+version = "1.1.12"
 edition = "2024"
 license = "MIT"
 description = "A lightweight crate for dependency injection."
@@ -11,8 +11,8 @@ async = ["dilian_core/async"]
 globals = ["dilian_core/globals"]
 
 [dependencies]
-dilian_core = { path = "dilian_core", version = "1.1.4" }
-dilian_macros = { path = "dilian_macros", version = "1.0.5", optional = true }
+dilian_core = { path = "dilian_core", version = "1.1.5" }
+dilian_macros = { path = "dilian_macros", version = "1.0.6", optional = true }
 
 [dev-dependencies]
 generic-tests = "0.1.3"
