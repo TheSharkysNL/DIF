@@ -6,7 +6,7 @@ pub mod cell;
 use crate::container::DIContainer;
 use crate::sync::{InstanceCellLock, Lock, LockBound};
 use std::any::{TypeId};
-
+use std::sync::atomic::AtomicBool;
 pub use components::*;
 use crate::cell::AnyMetadata;
 pub use crate::container::DependencyIter;
@@ -26,12 +26,7 @@ static ASYNC_MUTEX_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Inje
 #[cfg(all(feature = "globals", feature = "async"))]
 static ASYNC_RW_INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::AsyncRwLockMarker>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector::new()));
 
-// /// The global injector instance.
-// #[cfg(any(feature = "async", feature = "multithreaded"))]
-// static INJECTOR_INSTANCE: std::sync::LazyLock<std::sync::RwLock<Injector<crate::sync::Mutex>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(Injector { container: DIContainer::default() }));
-// 
-// #[cfg(not(any(feature = "async", feature = "multithreaded")))]
-// static mut INJECTOR_INSTANCE: Option<Injector> = None;
+static ALLOW_NON_TRANSIENT_PRODUCE: AtomicBool = AtomicBool::new(false);
 
 /// The main injector used for dependency injection.
 #[derive(Default)]
@@ -152,14 +147,15 @@ impl<L : Lock> Injector<L> {
     }
     
     /// Creates a new instance of `T` using the components in the injector.
-    /// This always creates a new instance, even if `T` was registered as a
-    /// singleton.
+    /// This can only create a new instance of a singleton or custom lifetime if the [`Injector::allow_non_transient_produce`] is set.
     ///
     /// This method returns ownership of `T` instead of a lock containing `T`.
     /// 
     /// # Panics
     /// 
     /// If a required component is not found in the injector.
+    /// 
+    /// Or if the component is not transient. Can be turned off by using the [`Injector::allow_non_transient_produce`] function.
     /// 
     /// # Example
     /// 
@@ -176,7 +172,7 @@ impl<L : Lock> Injector<L> {
     /// let mut injector = Injector::new();
     /// 
     /// // add dependency to the injector
-    /// injector.singleton::<Dependency>();
+    /// injector.transient::<Dependency>();
     /// 
     /// // get injector
     /// let dependent = injector.produce::<Dependent>(); 
@@ -186,7 +182,7 @@ impl<L : Lock> Injector<L> {
     /// ```
     pub fn produce<T : 'static>(&self) -> Option<T> {
         self.container
-            .produce(self)
+            .produce(self, ALLOW_NON_TRANSIENT_PRODUCE.load(std::sync::atomic::Ordering::Relaxed))
     }
     
     /// Registers a singleton component with the injector.
@@ -682,5 +678,26 @@ impl Injector<crate::sync::MutexMarker> {
     pub fn global_async_rw_mut() -> std::sync::RwLockWriteGuard<'static, Injector<crate::sync::AsyncRwLockMarker>> {
         ASYNC_RW_INJECTOR_INSTANCE.write()
             .unwrap()
+    }
+    
+    /// Allows the [`Injector::produce`] function to create new instances 
+    /// of components with either a [`ComponentLifetime::Singleton`] or [`ComponentLifetime::Custom`] lifetime.
+    /// Even if there are already other instances of these component.
+    /// 
+    /// To turn this off use [`Injector::disallow_non_transient_produce`]
+    /// 
+    /// The default is set to false.
+    pub fn allow_non_transient_produce() {
+        ALLOW_NON_TRANSIENT_PRODUCE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Only allows the [`Injector::produce`] function to create new instances 
+    /// of components with a [`ComponentLifetime::Transient`] lifetime.
+    /// 
+    /// To turn this on use [`Injector::allow_non_transient_produce`]
+    ///
+    /// The default is set to false.
+    pub fn disallow_non_transient_produce() {
+        ALLOW_NON_TRANSIENT_PRODUCE.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }

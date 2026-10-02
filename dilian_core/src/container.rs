@@ -83,12 +83,21 @@ impl<L : Lock> DIContainer<L> {
             )
     }
     
-    pub fn produce<T : 'static>(&self, injector: &Injector<L>) -> Option<T> {
+    pub fn produce<T : 'static>(&self, injector: &Injector<L>, allow_non_transient: bool) -> Option<T> {
         self.get_underlying(TypeId::of::<T>(), type_name::<T>())
-            .map(|x| x.first()
-                .create_or_clone
-                .create_new::<T>(injector)
-            )
+            .map(|x| {
+                let create_clone = &x.first()
+                    .create_or_clone;
+                if allow_non_transient {
+                    create_clone.create_new::<T>(injector)
+                } else {
+                    if matches!(create_clone, CreateOrClone::Transient(_)) {
+                        create_clone.create_new::<T>(injector)
+                    } else {
+                        panic!("Cannot produce a non transient service. To turn this off use Injector::allow_non_transient_produce.");
+                    }
+                }
+            })
     }
 
     pub fn get_list<'a, T : ?Sized  + 'static>(&'a self, injector: &'a Injector<L>) -> DependencyIter<'a, T, L> {

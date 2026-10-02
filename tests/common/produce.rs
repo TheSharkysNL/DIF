@@ -18,16 +18,33 @@ pub fn produce_dependency_not_found() {
 }
 
 #[test]
+#[should_panic]
 pub fn produce_singleton() {
     // Arrange
     let mut injector = Injector::<MutexMarker>::new();
     
     injector.singleton::<Dependency>();
     injector.singleton::<Dependent>();
+
+    Injector::disallow_non_transient_produce();
     
+    // Act + Assert
+    injector.produce::<Dependent>();
+}
+
+#[test]
+pub fn produce_singleton_allow_non_transient() {
+    // Arrange
+    let mut injector = Injector::<MutexMarker>::new();
+
+    injector.singleton::<Dependency>();
+    injector.singleton::<Dependent>();
+    
+    Injector::allow_non_transient_produce();
+
     // Act
     let v = injector.produce::<Dependent>();
-    
+
     // Assert
     assert!(v.is_some());
     assert!(DEPENDENCY_INITIALIZED.get());
@@ -52,7 +69,27 @@ pub fn produce_transient() {
 }
 
 #[test]
+#[should_panic]
 pub fn produce_singleton_with_factory() {
+    // Arrange
+    let mut injector = Injector::<MutexMarker>::new();
+    
+    injector.singleton::<Dependency>();
+    injector.component(Component::singleton::<Dependent>()
+        .with_factory(move |i| {
+            Dependent::from_injector(i)
+        })
+        .build_with_factory()
+    );
+
+    Injector::disallow_non_transient_produce();
+
+    // Act + Assert
+    injector.produce::<Dependent>();
+}
+
+#[test]
+pub fn produce_singleton_with_factory_allow_non_transient() {
     // Arrange
     let mut injector = Injector::<MutexMarker>::new();
     
@@ -68,6 +105,8 @@ pub fn produce_singleton_with_factory() {
         })
         .build_with_factory()
     );
+
+    Injector::allow_non_transient_produce();
 
     // Act
     let v = injector.produce::<Dependent>();
