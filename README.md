@@ -11,7 +11,7 @@ Add `dilian` with its procedural macros enabled:
 
 ```toml
 [dependencies]
-dilian = { version = "2", features = ["macros"] }
+dilian = { version = "1.1.13", features = ["macros"] }
 ```
 
 Define a service, register it, and resolve it:

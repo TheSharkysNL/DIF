@@ -1,6 +1,6 @@
 [package]
 name = "dilian"
-version = "1.1.12"
+version = "1.1.13"
 edition = "2024"
 license = "MIT"
 description = "A lightweight crate for dependency injection."
